@@ -15,10 +15,10 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://mindset-rosy.vercel.
  */
 export async function GET() {
   return NextResponse.json({
-    accountAssociation: {
-      header: "",
-      payload: "",
-      signature: "",
+   "accountAssociation": {
+    "header": "eyJmaWQiOjIzNjM0NCwidHlwZSI6ImF1dGgiLCJrZXkiOiIweGMxRWI5MDIxMTUwMDg5NWQ2RmJBZjFENjk4MTMyNzhGMzgwOEExYkEifQ",
+    "payload": "eyJkb21haW4iOiJtaW5kc2V0LXJvc3kudmVyY2VsLmFwcCJ9",
+    "signature": "lrI8qNfK899OT5koQAgA9+ApuKqJnw3lnqOJF70Pw6BtW5UpJeAxvPBaBUXZW2qjzL8zFXeXM5vKGkM3FhcBOxs="
     },
     miniapp: {
       version: "1",
