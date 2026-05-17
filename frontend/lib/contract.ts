@@ -32,11 +32,13 @@ export const predictionMarketAbi = [
     inputs: [
       { name: "_bettingToken", type: "address" },
       { name: "_feeRecipient", type: "address" },
+      { name: "_creationFee", type: "uint256" },
     ],
     stateMutability: "nonpayable",
   },
   { type: "function", name: "bettingToken", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
   { type: "function", name: "feeRecipient", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+  { type: "function", name: "creationFee", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
   { type: "function", name: "nextMarketId", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
   {
     type: "function",

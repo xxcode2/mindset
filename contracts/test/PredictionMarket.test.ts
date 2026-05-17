@@ -17,10 +17,10 @@ describe("PredictionMarket", () => {
     await usdc.waitForDeployment();
 
     const Pm = await ethers.getContractFactory("PredictionMarket");
-    const pm = await Pm.deploy(await usdc.getAddress(), fee.address);
+    const pm = await Pm.deploy(await usdc.getAddress(), fee.address, 5_000_000n); // 5 USDC creation fee
     await pm.waitForDeployment();
 
-    for (const s of [alice, bob, carol]) {
+    for (const s of [deployer, alice, bob, carol]) {
       await usdc.connect(s).faucet();
       await usdc.connect(s).approve(await pm.getAddress(), ethers.MaxUint256);
     }
@@ -67,12 +67,14 @@ describe("PredictionMarket", () => {
     const feeBefore = await usdc.balanceOf(fee.address);
     await pm.connect(resolver).resolve(0, true);
     const feeAfter = await usdc.balanceOf(fee.address);
-    expect(feeAfter - feeBefore).to.equal(4n * ONE);
+    // 5% of losing pool (400 USDC) = 20 USDC
+    expect(feeAfter - feeBefore).to.equal(20n * ONE);
 
+    // distributable = 200 + 400 - 20 = 580; alice has 1/2 stake => 290 USDC
     const aliceBefore = await usdc.balanceOf(alice.address);
     await pm.connect(alice).claim(0);
     const aliceAfter = await usdc.balanceOf(alice.address);
-    expect(aliceAfter - aliceBefore).to.equal(298n * ONE);
+    expect(aliceAfter - aliceBefore).to.equal(290n * ONE);
   });
 
   it("preview matches actual claim", async () => {
@@ -161,7 +163,7 @@ describe("ChainlinkPriceResolver", () => {
     await usdc.waitForDeployment();
 
     const Pm = await ethers.getContractFactory("PredictionMarket");
-    const pm = await Pm.deploy(await usdc.getAddress(), fee.address);
+    const pm = await Pm.deploy(await usdc.getAddress(), fee.address, 5_000_000n); // 5 USDC creation fee
     await pm.waitForDeployment();
 
     const Resolver = await ethers.getContractFactory("ChainlinkPriceResolver");
