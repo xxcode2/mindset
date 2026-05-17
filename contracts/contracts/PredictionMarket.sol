@@ -30,6 +30,11 @@ interface IERC20 {
 contract PredictionMarket {
     enum Outcome { Unresolved, Yes, No, Invalid }
 
+    /// @notice Discovery + UI categorization. Stored as a hint; pure presentation in the contract,
+    ///         but used by the frontend to filter and to choose a default resolver (e.g. ChainlinkPriceResolver
+    ///         for Price markets).
+    enum Category { Custom, Price, Sports, Politics, Social, Crypto }
+
     struct Market {
         address creator;
         address resolver;
@@ -42,6 +47,7 @@ contract PredictionMarket {
         uint32 yesBettors;
         uint32 noBettors;
         Outcome outcome;
+        Category category;
     }
 
     uint256 public constant RESOLUTION_GRACE_PERIOD = 7 days;
@@ -74,7 +80,8 @@ contract PredictionMarket {
         address indexed resolver,
         string question,
         string description,
-        uint64 closeTime
+        uint64 closeTime,
+        Category category
     );
     event BetPlaced(
         uint256 indexed marketId,
@@ -118,7 +125,8 @@ contract PredictionMarket {
         string calldata question,
         string calldata description,
         uint64 closeTime,
-        address resolver
+        address resolver,
+        Category category
     ) external returns (uint256 marketId) {
         if (bytes(question).length == 0 || bytes(question).length > 280) revert EmptyQuestion();
         if (closeTime <= block.timestamp) revert CloseTimeInPast();
@@ -136,11 +144,12 @@ contract PredictionMarket {
             noPool: 0,
             yesBettors: 0,
             noBettors: 0,
-            outcome: Outcome.Unresolved
+            outcome: Outcome.Unresolved,
+            category: category
         });
         _userCreated[msg.sender].push(marketId);
 
-        emit MarketCreated(marketId, msg.sender, resolver, question, description, closeTime);
+        emit MarketCreated(marketId, msg.sender, resolver, question, description, closeTime, category);
     }
 
     function bet(uint256 marketId, bool yes, uint256 amount) external {

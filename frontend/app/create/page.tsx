@@ -51,7 +51,7 @@ export default function CreatePage() {
       address: CONTRACT_ADDRESS,
       abi: predictionMarketAbi,
       functionName: "createMarket",
-      args: [q, description.trim(), closeTime, resolverAddr],
+      args: [q, description.trim(), closeTime, resolverAddr, 0], // 0 = Custom category
     });
   };
 
