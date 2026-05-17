@@ -20,7 +20,8 @@
     "tagline": "Grow, Prediction",
     "ogDescription": "prediction markets on Base. Take a side, win the pool.",
     "ogTitle": "Mindset - Prediction Markets",
-    "ogImageUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg"
+    "ogImageUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg",
+    "castShareUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg"
   },
   "accountAssociation": {
     "header": "eyJmaWQiOjIzNjM0NCwidHlwZSI6ImF1dGgiLCJrZXkiOiIweGMxRWI5MDIxMTUwMDg5NWQ2RmJBZjFENjk4MTMyNzhGMzgwOEExYkEifQ",
