@@ -1,75 +1,69 @@
-# Mindset
+# MINDSET
 
-> Put your money where your mindset is.
+> Prediction markets on Farcaster.
 
-A non-custodial habit commitment dApp on **Base**. Stake ETH on a habit, check in daily, hit your target — get every wei back. Miss the deadline — your stake is forwarded to a charity address fixed at deploy time.
+Non-custodial parimutuel YES/NO prediction markets on **Base**. Take a side in any market with USDC. When the market resolves, winners split the entire pool — losing stakes top up the prize. The smart contract is the only custodian; there is no admin and no upgrade path.
 
 ```
-contracts/   Solidity (Hardhat) — HabitStaking.sol
-frontend/    Next.js 14 + wagmi v2 + RainbowKit + Tailwind
+contracts/   Solidity (Hardhat) — PredictionMarket.sol + MockUSDC.sol  · 8 tests passing
+frontend/    Next.js 14 + wagmi v2 + Farcaster Mini App SDK + Tailwind
 ```
+
+This repository deploys both:
+- A **standalone web app** at any URL you host on (Vercel, Netlify, etc.)
+- A **Farcaster Mini App** discoverable inside Farcaster clients, from the same codebase.
 
 ---
 
-## Trust model — read this first
+## Why parimutuel?
+
+```
+Market: "Will BTC > $200k by Dec 31, 2026?"
+
+  YES pool: 200 USDC (alice 100, carol 100)
+  NO  pool: 400 USDC (bob 400)
+  ──────────────────────────────────────────
+  Resolved: YES
+
+  Fee = 1% of losing pool = 4 USDC → feeRecipient
+  Distributable = 200 + 400 − 4 = 596 USDC
+
+  alice payout = 100/200 × 596 = 298 USDC      (100 stake back + 198 winnings)
+  carol payout = 100/200 × 596 = 298 USDC
+  bob          = 0
+```
+
+Everyone on the winning side gets back their stake plus a slice of the losers' stakes — no order books, no AMM, no liquidity bootstrapping required.
+
+---
+
+## Trust model — read first
 
 This is a **non-custodial** application. The dev (you) does **not** hold user funds.
 
-- Funds are locked inside the `HabitStaking` smart contract.
+- All bets and payouts pass through the `PredictionMarket` smart contract.
 - The contract has **no owner, no admin, no upgrade path, no emergency withdraw**.
-- The charity address is set in the constructor and **immutable** forever.
-- Source is open. Anyone can audit it before staking.
+- `bettingToken` and `feeRecipient` are set in the constructor and **immutable** forever.
+- The 1% protocol fee is taken only from the **losing pool**, so winners always receive their full stake back plus a proportional share of the losers' stakes.
+- **Safety net**: if a market's resolver fails to settle within **7 days** of close, anyone can call `markInvalid()` — bettors then call `refund()` to recover their stake. Funds cannot get stuck.
 
-The risks that remain are the usual smart contract risks: bugs in the code itself. That's why we **start on Base Sepolia testnet** — fake ETH, zero financial risk, full learning.
+The remaining risk is the usual smart-contract risk. Start on **Base Sepolia testnet** to learn safely before going to mainnet.
 
 ---
 
-## Quick start — local
-
-### 1. Install
+## Quick start (local)
 
 ```bash
-# contracts
+# 1. Contracts
 cd contracts
 npm install
+npm test            # expect 8 passing
 
-# frontend (separate terminal)
-cd frontend
+# 2. Frontend
+cd ../frontend
 npm install
-```
-
-### 2. Run contract tests
-
-```bash
-cd contracts
-npm test
-```
-
-Expect 4 passing tests.
-
-### 3. Deploy locally (optional)
-
-```bash
-cd contracts
-npx hardhat node              # terminal A — local chain
-# in terminal B
-cp .env.example .env
-# edit .env: set CHARITY_ADDRESS to any test address (e.g. account #1 from `npx hardhat node`)
-# set PRIVATE_KEY to account #0's private key
-npm run deploy:local
-```
-
-Copy the deployed address into `frontend/.env.local`:
-
-```
-NEXT_PUBLIC_CONTRACT_ADDRESS=0x...
-NEXT_PUBLIC_WC_PROJECT_ID=        # leave empty for local
-```
-
-Run frontend:
-
-```bash
-cd frontend
+cp .env.example .env.local
+# fill in NEXT_PUBLIC_CONTRACT_ADDRESS + NEXT_PUBLIC_TOKEN_ADDRESS after deploying (see below)
 npm run dev
 # open http://localhost:3000
 ```
@@ -80,14 +74,14 @@ npm run dev
 
 ### 1. Get a wallet & testnet ETH
 
-1. Install [MetaMask](https://metamask.io/).
-2. Create a **fresh wallet** — never use your main wallet for deployment scripts.
-3. Switch to Base Sepolia (chain ID **84532**). MetaMask will offer to add it the first time you connect.
+1. Install [MetaMask](https://metamask.io/) or any EVM wallet.
+2. Create a **fresh wallet** for deployment. Never use your main wallet for scripts.
+3. Switch to **Base Sepolia** (chain ID `84532`).
 4. Get free ETH from a faucet:
-   - <https://www.alchemy.com/faucets/base-sepolia>
-   - <https://faucet.quicknode.com/base/sepolia>
+   - https://www.alchemy.com/faucets/base-sepolia
+   - https://faucet.quicknode.com/base/sepolia
 
-### 2. Configure the deployer
+### 2. Configure
 
 ```bash
 cd contracts
@@ -98,8 +92,9 @@ Edit `.env`:
 
 ```
 PRIVATE_KEY=0x<exported private key from your fresh test wallet>
-CHARITY_ADDRESS=0x<any address you do NOT control — for testnet this can be any address>
-BASESCAN_API_KEY=                # optional, only for verification
+FEE_RECIPIENT=0x<your wallet address — receives the 1% protocol fee>
+BETTING_TOKEN=                # leave empty on testnet — script auto-deploys MockUSDC
+BASESCAN_API_KEY=             # optional, for verification
 ```
 
 > Never commit `.env`. It's already in `.gitignore`.
@@ -110,16 +105,19 @@ BASESCAN_API_KEY=                # optional, only for verification
 npm run deploy:base-sepolia
 ```
 
-You'll see:
+The script deploys `MockUSDC` (since `BETTING_TOKEN` is empty), then `PredictionMarket`. Output:
 
 ```
-HabitStaking deployed to: 0xABC123...
+MockUSDC:                 0xTOKEN...
+PredictionMarket deployed to: 0xCONTRACT...
 ```
+
+It also writes `contracts/deployments.json` for reference.
 
 ### 4. (Optional) Verify on BaseScan
 
 ```bash
-npx hardhat verify --network baseSepolia 0xABC123... 0xCharityAddress
+npx hardhat verify --network baseSepolia 0xCONTRACT... 0xTOKEN... 0xFEE_RECIPIENT
 ```
 
 ### 5. Wire up the frontend
@@ -132,50 +130,58 @@ cp .env.example .env.local
 Edit `.env.local`:
 
 ```
-NEXT_PUBLIC_CONTRACT_ADDRESS=0xABC123...     # from step 3
-NEXT_PUBLIC_WC_PROJECT_ID=                   # get free at https://cloud.walletconnect.com
+NEXT_PUBLIC_CONTRACT_ADDRESS=0xCONTRACT...
+NEXT_PUBLIC_TOKEN_ADDRESS=0xTOKEN...
+NEXT_PUBLIC_TOKEN_SYMBOL=MUSDC          # MockUSDC on testnet, USDC on mainnet
+NEXT_PUBLIC_TOKEN_DECIMALS=6
+NEXT_PUBLIC_CHAIN_ID=84532
+NEXT_PUBLIC_WC_PROJECT_ID=              # free at https://cloud.walletconnect.com
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
 ```bash
 npm run dev
 ```
 
-Open <http://localhost:3000>, connect MetaMask on Base Sepolia, create a habit with 0.001 ETH, and try check-in.
+Open http://localhost:3000, connect a wallet on Base Sepolia, click **Faucet** in any market's bet panel to mint 10,000 test USDC, then create or bet.
 
 ---
 
-## How it works
+## Publish as a Farcaster Mini App
 
-### User journey
+Already wired:
 
-1. User connects wallet.
-2. Calls `createHabit(description, durationDays, requiredCheckIns)` with ETH attached.
-3. Each day during the active window, user calls `checkIn(habitId)` — one per UTC day max.
-4. Once `checkInsCount >= requiredCheckIns`, user calls `claim(habitId)` and gets the full stake back.
-5. If the deadline passes without hitting the target, **anyone** can call `forfeit(habitId)` — the stake is sent to the immutable charity address.
+- `app/.well-known/farcaster.json/route.ts` — serves the Mini App manifest.
+- `app/layout.tsx` — emits `fc:miniapp` and legacy `fc:frame` meta tags so the page is shareable as a rich card in Farcaster.
+- `app/providers.tsx` — calls `sdk.actions.ready()` on mount to dismiss the Farcaster splash screen.
+- `lib/wagmi.ts` — registers the `farcasterMiniApp()` connector first; works inside a Farcaster client and silently falls through to MetaMask / Coinbase Wallet / WalletConnect on the open web.
 
-### Contract surface
+### Steps
 
-| Function                                          | Who         | Effect                              |
-| ------------------------------------------------- | ----------- | ----------------------------------- |
-| `createHabit(string, uint32, uint32) payable`     | anyone      | Stake ETH, register a new habit     |
-| `checkIn(uint256)`                                | habit owner | Mark today as checked-in            |
-| `claim(uint256)`                                  | habit owner | If target met, receive full stake   |
-| `forfeit(uint256)`                                | anyone      | After deadline + target unmet, send stake to charity |
-| `getHabit(uint256) view`                          | anyone      | Read habit struct                   |
-| `getUserHabits(address) view`                     | anyone      | List habit IDs for an address       |
-| `canCheckInToday(uint256) view`                   | anyone      | Helper for UI                       |
+1. **Deploy the website** (Vercel, Netlify, etc.) so it has a public HTTPS URL, e.g. `https://mindset.example.com`.
+2. Set `NEXT_PUBLIC_APP_URL` in your hosting provider's env vars to that URL and redeploy.
+3. Add brand assets to `frontend/public/`:
+   - `icon.png` (200×200)
+   - `og.png` (1200×800) — used as embed and social card image
+   - `splash.png` (200×200) — shown while the mini app loads
+4. **Sign your manifest**: open the [Farcaster manifest tool](https://farcaster.xyz/~/developers/mini-apps/manifest), enter your domain, sign with the FID that owns the app, and paste the resulting `accountAssociation` block (`header`, `payload`, `signature`) into `app/.well-known/farcaster.json/route.ts`. Redeploy.
+5. **Test it**: paste your URL into the [Farcaster preview tool](https://farcaster.xyz/~/developers/mini-apps/preview).
+6. **Cast it**: post the URL on Farcaster — it now renders as a rich Mini App card with an "Open Mindset" button.
 
 ---
 
-## Going to mainnet (later)
+## Contract surface
 
-When you're confident:
-
-1. **Get a professional audit** of `HabitStaking.sol`. Real money = real audit.
-2. Choose the actual charity: a known multisig or DAO treasury. Note: it's immutable at deploy.
-3. Deploy with `npm run deploy:base-sepolia` swapped to a `base` network run, and ETH on Base mainnet.
-4. Update `frontend/.env.local` with the new address and the `base` chain selected first in `wagmi.ts`.
+| Function                                                | Who           | Effect |
+| ------------------------------------------------------- | ------------- | ------ |
+| `createMarket(string question, string description, uint64 closeTime, address resolver)` | anyone | Register a new YES/NO market |
+| `bet(uint256 marketId, bool yes, uint256 amount)`       | anyone        | Take a side. Requires prior `approve()` on the betting token |
+| `resolve(uint256 marketId, bool yesWon)`                | resolver      | After close time, set the outcome; 1% fee from losing pool goes to feeRecipient |
+| `claim(uint256 marketId)`                               | winner        | Receive proportional payout from the pool |
+| `markInvalid(uint256 marketId)`                         | anyone        | After close + 7 days unresolved, mark for refunds |
+| `refund(uint256 marketId)`                              | bettor        | Get original stake back from an invalidated market |
+| `previewPayout(marketId, user, yesOutcome) view`        | anyone        | Preview payout for a hypothetical outcome |
+| `impliedYesBps(marketId) view`                          | anyone        | Implied probability of YES (0–10000 bps) |
 
 ---
 
@@ -184,31 +190,59 @@ When you're confident:
 ```
 mindset/
 ├── contracts/
-│   ├── contracts/HabitStaking.sol       # the only contract
-│   ├── scripts/deploy.ts                # deploy script
-│   ├── test/HabitStaking.test.ts        # unit tests
-│   ├── hardhat.config.ts
-│   └── .env.example
+│   ├── contracts/
+│   │   ├── PredictionMarket.sol
+│   │   └── MockUSDC.sol           # testnet faucet token (6 decimals)
+│   ├── scripts/deploy.ts
+│   ├── test/PredictionMarket.test.ts
+│   └── hardhat.config.ts
 └── frontend/
     ├── app/
-    │   ├── layout.tsx
-    │   ├── page.tsx
-    │   ├── providers.tsx                # wagmi + RainbowKit + react-query
+    │   ├── .well-known/farcaster.json/route.ts   # Farcaster manifest
+    │   ├── layout.tsx                             # fc:miniapp meta + fonts + providers
+    │   ├── page.tsx                               # /  (Hero)
+    │   ├── markets/page.tsx                       # /markets
+    │   ├── markets/[id]/page.tsx                  # /markets/123
+    │   ├── dashboard/page.tsx                     # /dashboard
+    │   ├── create/page.tsx                        # /create
+    │   ├── providers.tsx
     │   └── globals.css
     ├── components/
-    │   ├── Hero.tsx
-    │   ├── HowItWorks.tsx
-    │   ├── CreateHabit.tsx
-    │   ├── HabitList.tsx
-    │   └── HabitCard.tsx
-    ├── lib/
-    │   ├── contract.ts                  # ABI + address
-    │   └── wagmi.ts                     # chain config
-    └── .env.example
+    │   ├── Navbar.tsx
+    │   ├── Footer.tsx
+    │   ├── ConnectButton.tsx
+    │   ├── ParticlesBg.tsx
+    │   ├── Toaster.tsx
+    │   ├── MarketCard.tsx
+    │   ├── BetPanel.tsx
+    │   └── MarketActivity.tsx
+    └── lib/
+        ├── contract.ts            # ABIs, addresses, types, status helpers
+        ├── wagmi.ts               # dual-mode connector setup (Farcaster + web)
+        ├── hooks.ts               # useAllMarkets, useMarket
+        ├── toast.ts               # tiny pub/sub toast bus
+        └── utils.ts               # token/time formatters
 ```
+
+---
+
+## Going to mainnet (later)
+
+When you're confident:
+
+1. **Get a professional audit** of `PredictionMarket.sol`. Real money = real audit.
+2. Use **real USDC on Base** by setting `BETTING_TOKEN=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (Base mainnet USDC).
+3. Choose a meaningful `feeRecipient` (multisig or DAO treasury). It is immutable at deploy.
+4. Run `npm run deploy:base`.
+5. Update `frontend/.env.local`:
+   - `NEXT_PUBLIC_CONTRACT_ADDRESS` = mainnet address
+   - `NEXT_PUBLIC_TOKEN_ADDRESS` = USDC mainnet
+   - `NEXT_PUBLIC_TOKEN_SYMBOL=USDC`
+   - `NEXT_PUBLIC_CHAIN_ID=8453`
+6. Sign and ship the Farcaster manifest with your real domain.
 
 ---
 
 ## Disclaimer
 
-Educational project. Not audited. Not financial advice. Do not stake funds you cannot afford to lose. Use testnet first.
+Educational project. Not audited. Not financial / betting advice. Prediction-market style betting may be regulated in your jurisdiction. Use testnet first.

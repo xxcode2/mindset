@@ -1,0 +1,205 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+* { box-sizing: border-box; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0a0a14; }
+::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 3px; }
+
+body {
+  font-family: var(--font-outfit), Outfit, ui-sans-serif, system-ui, sans-serif;
+  background: linear-gradient(180deg, #05050f 0%, #0a0a1a 50%, #050510 100%);
+  color: #f1f5f9;
+  min-height: 100vh;
+}
+
+/* ── Glass card ────────────────────────────────────────────────── */
+@layer components {
+  .glass-card {
+    background: linear-gradient(135deg, rgba(15, 15, 35, 0.8) 0%, rgba(10, 10, 25, 0.6) 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(99, 102, 241, 0.12);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 1rem;
+  }
+  .glass-card-hover:hover {
+    border-color: rgba(99, 102, 241, 0.3);
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.08), inset 0 1px 0 rgba(255,255,255,0.05);
+    transform: translateY(-2px);
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────────── */
+  .btn-primary {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #6366f1 100%);
+    background-size: 200% 200%;
+    color: white;
+    font-weight: 600;
+    border: none;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-position: 100% 100%;
+    box-shadow: 0 0 24px rgba(99, 102, 241, 0.4), 0 0 48px rgba(139, 92, 246, 0.15);
+    transform: translateY(-1px);
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: #c4b5fd;
+    font-weight: 600;
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: rgba(139, 92, 246, 0.1);
+    border-color: rgba(139, 92, 246, 0.6);
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+    color: #e0d5ff;
+  }
+  .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Input ───────────────────────────────────────────────────── */
+  .input-field {
+    background: rgba(10, 10, 30, 0.6);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    color: #e2e8f0;
+    transition: all 0.3s;
+    width: 100%;
+  }
+  .input-field:focus {
+    outline: none;
+    border-color: rgba(99, 102, 241, 0.5);
+    box-shadow: 0 0 16px rgba(99, 102, 241, 0.15);
+  }
+  .input-field::placeholder { color: rgba(148, 163, 184, 0.4); }
+
+  /* ── Badges ──────────────────────────────────────────────────── */
+  .badge-open { background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.25); }
+  .badge-closed { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.25); }
+  .badge-resolved { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.25); }
+
+  /* ── Pool bars ───────────────────────────────────────────────── */
+  .pool-bar-yes {
+    background: linear-gradient(90deg, #34d399, #10b981);
+    box-shadow: 0 0 12px rgba(52, 211, 153, 0.3);
+  }
+  .pool-bar-no {
+    background: linear-gradient(90deg, #f87171, #ef4444);
+    box-shadow: 0 0 12px rgba(248, 113, 113, 0.3);
+  }
+
+  /* ── Encrypted badge ─────────────────────────────────────────── */
+  .info-pill {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+  }
+
+  /* ── Toggle YES/NO ───────────────────────────────────────────── */
+  .toggle-btn {
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid rgba(148,163,184,0.15);
+    color: rgba(148,163,184,0.5);
+    cursor: pointer;
+  }
+  .toggle-btn.active-yes {
+    background: rgba(52, 211, 153, 0.2);
+    border-color: rgba(52, 211, 153, 0.6);
+    color: #34d399;
+    box-shadow: 0 0 16px rgba(52, 211, 153, 0.2);
+  }
+  .toggle-btn.active-no {
+    background: rgba(248, 113, 113, 0.2);
+    border-color: rgba(248, 113, 113, 0.6);
+    color: #f87171;
+    box-shadow: 0 0 16px rgba(248, 113, 113, 0.2);
+  }
+
+  /* ── Nav link ────────────────────────────────────────────────── */
+  .nav-link {
+    color: rgba(203, 213, 225, 0.6);
+    transition: all 0.3s;
+    position: relative;
+  }
+  .nav-link:hover, .nav-link.active { color: #e2e8f0; }
+  .nav-link.active::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6);
+    border-radius: 1px;
+  }
+
+  /* ── Glow orb ────────────────────────────────────────────────── */
+  .glow-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    animation: pulseGlow 4s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* ── Hero gradient text ──────────────────────────────────────── */
+  .hero-title-gradient {
+    background: linear-gradient(135deg, #f1f5f9 0%, #c4b5fd 40%, #818cf8 70%, #6366f1 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  .logo-gradient {
+    background: linear-gradient(135deg, #e2e8f0, #c4b5fd);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* ── Hero grid lines ─────────────────────────────────────────── */
+  .hero-grid-line { stroke: rgba(99, 102, 241, 0.06); stroke-width: 1; }
+}
+
+/* Stagger fade-up delays */
+.delay-1 { animation-delay: 0.1s; opacity: 0; }
+.delay-2 { animation-delay: 0.2s; opacity: 0; }
+.delay-3 { animation-delay: 0.3s; opacity: 0; }
+.delay-4 { animation-delay: 0.4s; opacity: 0; }
+.delay-5 { animation-delay: 0.5s; opacity: 0; }
+.delay-6 { animation-delay: 0.6s; opacity: 0; }
+
+/* Particle drift */
+@keyframes particleDrift {
+  0% { transform: translate(0, 0) scale(1); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0.3); opacity: 0; }
+}
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  animation: particleDrift linear infinite;
+  pointer-events: none;
+}

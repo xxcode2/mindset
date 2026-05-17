@@ -1,0 +1,74 @@
+import type { Metadata } from "next";
+import { Outfit, JetBrains_Mono } from "next/font/google";
+import { Providers } from "./providers";
+import { Navbar } from "@/components/Navbar";
+import { Footer } from "@/components/Footer";
+import { Toaster } from "@/components/Toaster";
+import "./globals.css";
+
+const outfit = Outfit({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
+  variable: "--font-outfit",
+  display: "swap",
+});
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-mono",
+  display: "swap",
+});
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://your-app.example.com";
+
+const miniAppEmbed = {
+  version: "1",
+  imageUrl: `${APP_URL}/og.png`,
+  button: {
+    title: "Open Mindset",
+    action: {
+      type: "launch_miniapp",
+      name: "Mindset",
+      url: APP_URL,
+      splashImageUrl: `${APP_URL}/splash.png`,
+      splashBackgroundColor: "#05050f",
+    },
+  },
+};
+
+export const metadata: Metadata = {
+  title: "MINDSET — Prediction Markets on Farcaster",
+  description:
+    "Non-custodial parimutuel YES/NO prediction markets on Base. Take a side, win the pool.",
+  metadataBase: new URL(APP_URL),
+  openGraph: {
+    title: "MINDSET — Prediction Markets on Farcaster",
+    description:
+      "Non-custodial parimutuel YES/NO prediction markets on Base. Take a side, win the pool.",
+    url: APP_URL,
+    images: [{ url: "/og.png" }],
+  },
+  // Farcaster Mini App embed metadata. Both fc:miniapp and fc:frame are emitted
+  // for max compatibility with current and legacy clients.
+  other: {
+    "fc:miniapp": JSON.stringify(miniAppEmbed),
+    "fc:frame": JSON.stringify(miniAppEmbed),
+  },
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" className={`${outfit.variable} ${mono.variable}`}>
+      <body className="min-h-screen antialiased">
+        <Providers>
+          <div className="flex min-h-screen flex-col">
+            <Navbar />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </div>
+          <Toaster />
+        </Providers>
+      </body>
+    </html>
+  );
+}
