@@ -19,18 +19,18 @@ const mono = JetBrains_Mono({
   display: "swap",
 });
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://your-app.example.com";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://mindset-rosy.vercel.app";
 
 const miniAppEmbed = {
   version: "1",
-  imageUrl: `${APP_URL}/og.png`,
+  imageUrl: `${APP_URL}/mindset.jpg`,
   button: {
     title: "Open Mindset",
     action: {
       type: "launch_miniapp",
       name: "Mindset",
       url: APP_URL,
-      splashImageUrl: `${APP_URL}/splash.png`,
+      splashImageUrl: `${APP_URL}/mindset.jpg`,
       splashBackgroundColor: "#05050f",
     },
   },
@@ -46,10 +46,8 @@ export const metadata: Metadata = {
     description:
       "Non-custodial parimutuel YES/NO prediction markets on Base. Take a side, win the pool.",
     url: APP_URL,
-    images: [{ url: "/og.png" }],
+    images: [{ url: "/mindset.jpg" }],
   },
-  // Farcaster Mini App embed metadata. Both fc:miniapp and fc:frame are emitted
-  // for max compatibility with current and legacy clients.
   other: {
     "fc:miniapp": JSON.stringify(miniAppEmbed),
     "fc:frame": JSON.stringify(miniAppEmbed),
