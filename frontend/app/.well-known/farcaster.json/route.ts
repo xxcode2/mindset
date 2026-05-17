@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://your-app.example.com";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://mindset-rosy.vercel.app";
 
 /**
  * Farcaster Mini App manifest.
@@ -23,11 +23,11 @@ export async function GET() {
     miniapp: {
       version: "1",
       name: "Mindset",
-      iconUrl: `${APP_URL}/icon.png`,
+      iconUrl: `${APP_URL}/mindset-nobg.jpg`,
       homeUrl: APP_URL,
-      imageUrl: `${APP_URL}/og.png`,
+      imageUrl: `${APP_URL}/mindset.jpg`,
       buttonTitle: "Open Mindset",
-      splashImageUrl: `${APP_URL}/splash.png`,
+      splashImageUrl: `${APP_URL}/mindset.jpg`,
       splashBackgroundColor: "#05050f",
       subtitle: "Prediction markets on Farcaster",
       description:
