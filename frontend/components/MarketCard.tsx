@@ -2,14 +2,32 @@
 
 import Link from "next/link";
 import type { Market } from "@/lib/contract";
-import { OUTCOME_LABEL, statusFromMarket } from "@/lib/contract";
+import { CATEGORIES, statusFromMarket } from "@/lib/contract";
 import { fmtCompactUsd, fmtCountdown } from "@/lib/utils";
 
-const BADGE: Record<string, string> = {
+const STATUS_BADGE: Record<string, string> = {
   open: "badge-open",
   closed: "badge-closed",
   resolved: "badge-resolved",
   invalid: "badge-resolved",
+};
+
+const CAT_STYLE: Record<number, { bg: string; text: string; border: string }> = {
+  0: { bg: "rgba(148,163,184,0.08)", text: "#94a3b8", border: "rgba(148,163,184,0.2)" }, // Custom
+  1: { bg: "rgba(99,102,241,0.1)", text: "#818cf8", border: "rgba(99,102,241,0.25)" },   // Price
+  2: { bg: "rgba(251,191,36,0.1)", text: "#fbbf24", border: "rgba(251,191,36,0.25)" },   // Sports
+  3: { bg: "rgba(244,114,182,0.1)", text: "#f472b6", border: "rgba(244,114,182,0.25)" }, // Politics
+  4: { bg: "rgba(52,211,153,0.1)", text: "#34d399", border: "rgba(52,211,153,0.25)" },   // Social
+  5: { bg: "rgba(251,146,60,0.1)", text: "#fb923c", border: "rgba(251,146,60,0.25)" },   // Crypto
+};
+
+const CAT_ICON: Record<number, string> = {
+  0: "⚙️",
+  1: "📈",
+  2: "⚽",
+  3: "🏛️",
+  4: "💬",
+  5: "🪙",
 };
 
 export function MarketCard({ id, market }: { id: bigint; market: Market }) {
@@ -30,21 +48,36 @@ export function MarketCard({ id, market }: { id: bigint; market: Market }) {
       ? "invalid"
       : status;
 
+  const catIndex = market.category ?? 0;
+  const catName = CATEGORIES[catIndex] ?? "Custom";
+  const catStyle = CAT_STYLE[catIndex] ?? CAT_STYLE[0];
+
   return (
     <Link
       href={`/markets/${id.toString()}`}
       className="glass-card glass-card-hover block p-6 cursor-pointer"
     >
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <h3 className="text-sm font-semibold leading-snug" style={{ color: "#e2e8f0" }}>
-          {market.question}
-        </h3>
+      <div className="mb-3 flex items-center gap-2">
+        {/* Category badge */}
         <span
-          className={`${BADGE[status]} flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize`}
+          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+          style={{ background: catStyle.bg, color: catStyle.text, border: `1px solid ${catStyle.border}` }}
+        >
+          <span>{CAT_ICON[catIndex]}</span>
+          {catName}
+        </span>
+        {/* Status badge */}
+        <span
+          className={`${STATUS_BADGE[status]} ml-auto flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize`}
         >
           {label}
         </span>
       </div>
+
+      <h3 className="mb-3 text-sm font-semibold leading-snug" style={{ color: "#e2e8f0" }}>
+        {market.question}
+      </h3>
+
       <div
         className="mb-4 flex items-center gap-2 text-xs font-mono"
         style={{ color: "rgba(148,163,184,0.5)" }}
@@ -55,6 +88,7 @@ export function MarketCard({ id, market }: { id: bigint; market: Market }) {
         </svg>
         {status === "open" ? fmtCountdown(closeSec) : status === "closed" ? "Awaiting resolution" : "Closed"}
       </div>
+
       <div className="mb-4">
         <div className="mb-1.5 flex justify-between text-xs font-medium">
           <span style={{ color: "#34d399" }}>YES {yesPct.toFixed(1)}%</span>
@@ -70,6 +104,7 @@ export function MarketCard({ id, market }: { id: bigint; market: Market }) {
           />
         </div>
       </div>
+
       <div className="flex items-center justify-between">
         <div>
           <div className="text-xs" style={{ color: "rgba(148,163,184,0.4)" }}>

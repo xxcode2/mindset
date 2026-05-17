@@ -8,9 +8,13 @@ import { BetPanel } from "@/components/BetPanel";
 import { MarketActivity } from "@/components/MarketActivity";
 import {
   CONTRACT_ADDRESS,
+  PRICE_RESOLVER_ADDRESS,
+  CATEGORIES,
   predictionMarketAbi,
+  priceResolverAbi,
   type Market,
   statusFromMarket,
+  APP_URL,
 } from "@/lib/contract";
 import { fmtAddr, fmtCompactUsd, fmtCountdown, fmtToken } from "@/lib/utils";
 import { pushToast } from "@/lib/toast";
@@ -308,6 +312,45 @@ export default function MarketDetailPage() {
                   Grace expired — mark invalid
                 </button>
               )}
+              {/* Auto-resolve for Price markets via Chainlink */}
+              {status === "closed" && market.resolver.toLowerCase() === PRICE_RESOLVER_ADDRESS.toLowerCase() && PRICE_RESOLVER_ADDRESS !== "0x0000000000000000000000000000000000000000" && (
+                <button
+                  className="btn-primary rounded-xl px-5 py-2.5 text-sm"
+                  style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}
+                  disabled={resolveTx.isPending || resolveMined.isLoading}
+                  onClick={() =>
+                    resolveTx.writeContract({
+                      address: PRICE_RESOLVER_ADDRESS,
+                      abi: priceResolverAbi,
+                      functionName: "resolveMarket",
+                      args: [marketId],
+                    })
+                  }
+                >
+                  {resolveTx.isPending || resolveMined.isLoading ? "Resolving…" : "⚡ Auto-resolve (Chainlink)"}
+                </button>
+              )}
+            </div>
+
+            {/* Share on Farcaster */}
+            <div className="mt-4">
+              <button
+                onClick={() => {
+                  const marketUrl = `${APP_URL}/markets/${marketId.toString()}`;
+                  const text = encodeURIComponent(`${market.question}\n\nBet on it:`);
+                  const shareUrl = `https://warpcast.com/~/compose?text=${text}&embeds[]=${encodeURIComponent(marketUrl)}`;
+                  window.open(shareUrl, "_blank", "noopener,noreferrer");
+                }}
+                className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-medium transition hover:bg-white/5"
+                style={{ border: "1px solid rgba(139,92,246,0.3)", color: "#c4b5fd" }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                  <polyline points="16 6 12 2 8 6" />
+                  <line x1="12" y1="2" x2="12" y2="15" />
+                </svg>
+                Share on Farcaster
+              </button>
             </div>
 
             {(myYes > 0n || myNo > 0n) && (
