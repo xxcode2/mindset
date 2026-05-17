@@ -51,12 +51,16 @@ contract PredictionMarket {
     }
 
     uint256 public constant RESOLUTION_GRACE_PERIOD = 7 days;
-    uint16 public constant FEE_BPS = 100; // 1.00%
+    uint16 public constant FEE_BPS = 500; // 5.00%
     uint16 public constant BPS_DENOMINATOR = 10_000;
+
+    /// @notice Fixed fee (in betting token units) charged when creating a market. Sent to feeRecipient.
+    ///         Set to 5 USDC (5 * 10^6) assuming 6-decimal token. Immutable.
+    uint256 public immutable creationFee;
 
     /// @notice ERC20 token used for all bets and payouts. Immutable.
     IERC20 public immutable bettingToken;
-    /// @notice Receives the protocol fee from losing pools. Immutable.
+    /// @notice Receives the protocol fee from losing pools + creation fees. Immutable.
     address public immutable feeRecipient;
 
     uint256 public nextMarketId;
@@ -111,12 +115,14 @@ contract PredictionMarket {
     error NotInGracePeriod();
     error TransferFailed();
     error ZeroBet();
+    error CreationFeeFailed();
 
-    constructor(IERC20 _bettingToken, address _feeRecipient) {
+    constructor(IERC20 _bettingToken, address _feeRecipient, uint256 _creationFee) {
         if (address(_bettingToken) == address(0)) revert InvalidToken();
         if (_feeRecipient == address(0)) revert InvalidFeeRecipient();
         bettingToken = _bettingToken;
         feeRecipient = _feeRecipient;
+        creationFee = _creationFee;
     }
 
     // ─── Market lifecycle ────────────────────────────────────────────────────
@@ -131,6 +137,12 @@ contract PredictionMarket {
         if (bytes(question).length == 0 || bytes(question).length > 280) revert EmptyQuestion();
         if (closeTime <= block.timestamp) revert CloseTimeInPast();
         if (resolver == address(0)) revert InvalidResolver();
+
+        // Charge creation fee (anti-spam). Requires prior approval.
+        if (creationFee > 0) {
+            bool ok = bettingToken.transferFrom(msg.sender, feeRecipient, creationFee);
+            if (!ok) revert CreationFeeFailed();
+        }
 
         marketId = nextMarketId++;
         _markets[marketId] = Market({

@@ -30,10 +30,12 @@ async function main() {
   }
 
   const Pm = await ethers.getContractFactory("PredictionMarket");
-  const pm = await Pm.deploy(tokenAddress, feeRecipient);
+  const creationFee = 5_000_000n; // 5 USDC (6 decimals)
+  const pm = await Pm.deploy(tokenAddress, feeRecipient, creationFee);
   await pm.waitForDeployment();
   const pmAddress = await pm.getAddress();
   console.log("\nPredictionMarket:", pmAddress);
+  console.log("  Creation fee:  ", "5 USDC");
 
   // Deploy ChainlinkPriceResolver — auto-resolves Price-category markets.
   const Resolver = await ethers.getContractFactory("ChainlinkPriceResolver");

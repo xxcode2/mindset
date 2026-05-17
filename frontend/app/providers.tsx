@@ -1,29 +1,25 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { WagmiProvider } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi";
+import { sdk } from "@farcaster/miniapp-sdk";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
+  const readyCalled = useRef(false);
 
   // Tell the Farcaster client we are ready, so it can hide its splash screen.
-  // Safe no-op outside Farcaster context.
+  // Must be called ASAP. The SDK gracefully no-ops outside a Farcaster webview.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const mod = await import("@farcaster/miniapp-sdk");
-        if (cancelled) return;
-        await mod.sdk.actions.ready();
-      } catch {
-        /* not in a mini app; ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    if (readyCalled.current) return;
+    readyCalled.current = true;
+    try {
+      sdk.actions.ready();
+    } catch {
+      // Not inside a Farcaster mini app — ignore.
+    }
   }, []);
 
   return (
