@@ -2,16 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { ConnectButton } from "@/components/ConnectButton";
 import {
   CATEGORIES,
   COMPARATORS,
   CONTRACT_ADDRESS,
+  TOKEN_ADDRESS,
   PRICE_RESOLVER_ADDRESS,
   PRICE_FEEDS,
   type CategoryIndex,
   type ComparatorIndex,
+  erc20Abi,
   getFeedAddress,
   predictionMarketAbi,
   priceResolverAbi,
@@ -47,14 +49,41 @@ export default function CreatePage() {
   const [threshold, setThreshold] = useState("");
 
   // TX state
+  const approveTx = useWriteContract();
   const createTx = useWriteContract();
   const registerTx = useWriteContract();
+  const approveMined = useWaitForTransactionReceipt({ hash: approveTx.data });
   const createMined = useWaitForTransactionReceipt({ hash: createTx.data });
   const registerMined = useWaitForTransactionReceipt({ hash: registerTx.data });
 
+  // Check allowance for creation fee
+  const { data: allowanceData, refetch: refetchAllowance } = useReadContract({
+    address: TOKEN_ADDRESS,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address ? [address, CONTRACT_ADDRESS] : undefined,
+    query: { enabled: !!address },
+  });
+  const { data: creationFeeData } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: predictionMarketAbi,
+    functionName: "creationFee",
+  });
+  const allowance = (allowanceData as bigint | undefined) ?? 0n;
+  const creationFee = (creationFeeData as bigint | undefined) ?? 5_000_000n; // fallback 5 USDC
+  const needsApproval = creationFee > 0n && allowance < creationFee;
+
   // After createMarket succeeds for Price category, we need the marketId to call registerCondition.
-  // wagmi doesn't return decoded return values from writeContract easily, so we read nextMarketId - 1.
   const [pendingRegister, setPendingRegister] = useState(false);
+
+  // Handle approve success
+  useEffect(() => {
+    if (approveMined.isSuccess) {
+      pushToast("Approval confirmed! Now creating market...", "success");
+      approveTx.reset();
+      refetchAllowance();
+    }
+  }, [approveMined.isSuccess]); // eslint-disable-line
 
   useEffect(() => {
     if (createMined.isSuccess && category === 1 && !pendingRegister) {
@@ -130,7 +159,8 @@ export default function CreatePage() {
   useEffect(() => {
     if (createTx.error) pushToast(createTx.error.message ?? "Transaction failed", "error");
     if (registerTx.error) pushToast(registerTx.error.message ?? "Register condition failed", "error");
-  }, [createTx.error, registerTx.error]);
+    if (approveTx.error) pushToast(approveTx.error.message ?? "Approval failed", "error");
+  }, [createTx.error, registerTx.error, approveTx.error]);
 
   // Auto-generate question for Price markets
   useEffect(() => {
@@ -170,6 +200,18 @@ export default function CreatePage() {
 
     if (!/^0x[a-fA-F0-9]{40}$/.test(resolverAddr)) return pushToast("Invalid resolver address", "error");
 
+    // Step 1: If needs approval, do that first
+    if (needsApproval) {
+      approveTx.writeContract({
+        address: TOKEN_ADDRESS,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [CONTRACT_ADDRESS, 2n ** 256n - 1n], // max approval
+      });
+      return;
+    }
+
+    // Step 2: Create market
     const closeTime = BigInt(Math.floor(Date.now() / 1000) + Math.round(hours * 3600));
 
     createTx.writeContract({
@@ -180,12 +222,16 @@ export default function CreatePage() {
     });
   };
 
-  const busy = createTx.isPending || createMined.isLoading || registerTx.isPending || registerMined.isLoading;
+  const busy = approveTx.isPending || approveMined.isLoading || createTx.isPending || createMined.isLoading || registerTx.isPending || registerMined.isLoading;
 
   const buttonLabel = busy
-    ? pendingRegister
+    ? approveTx.isPending || approveMined.isLoading
+      ? "Approving USDC…"
+      : pendingRegister
       ? "Registering oracle condition…"
       : "Creating market…"
+    : needsApproval
+    ? "Approve USDC (for creation fee)"
     : category === 1
     ? "Create Price Market (2 txns)"
     : "Create Market";
