@@ -34,6 +34,11 @@ export async function GET() {
         "Non-custodial parimutuel YES/NO prediction markets on Base. Take a side, win the pool.",
       primaryCategory: "social",
       tags: ["prediction", "markets", "base", "social", "betting"],
+      requiredChains: ["eip155:84532"],
+      requiredCapabilities: [
+        "actions.signIn",
+        "wallet.getEthereumProvider",
+      ],
     },
   });
 }
