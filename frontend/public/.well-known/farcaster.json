@@ -1,0 +1,30 @@
+{
+  "frame": {
+    "name": "Mindset",
+    "version": "1",
+    "iconUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg",
+    "homeUrl": "https://mindset-rosy.vercel.app",
+    "imageUrl": "https://mindset-rosy.vercel.app/mindset.jpg",
+    "buttonTitle": "Open Mindset",
+    "splashImageUrl": "https://mindset-rosy.vercel.app/mindset.jpg",
+    "splashBackgroundColor": "#05050f",
+    "webhookUrl": "https://mindset-rosy.vercel.app/api/webhook",
+    "subtitle": "Prediction Market",
+    "description": "Non-custodial parimutuel YES/NO prediction markets on Base. Take a side, win the pool.",
+    "primaryCategory": "social",
+    "screenshotUrls": [
+      "https://mindset-rosy.vercel.app/mindset-nobg.jpg"
+    ],
+    "heroImageUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg",
+    "tags": [],
+    "tagline": "Grow, Prediction",
+    "ogDescription": "prediction markets on Base. Take a side, win the pool.",
+    "ogTitle": "Mindset - Prediction Markets",
+    "ogImageUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg"
+  },
+  "accountAssociation": {
+    "header": "eyJmaWQiOjIzNjM0NCwidHlwZSI6ImF1dGgiLCJrZXkiOiIweGMxRWI5MDIxMTUwMDg5NWQ2RmJBZjFENjk4MTMyNzhGMzgwOEExYkEifQ",
+    "payload": "eyJkb21haW4iOiJtaW5kc2V0LXJvc3kudmVyY2VsLmFwcCJ9",
+    "signature": "lrI8qNfK899OT5koQAgA9+ApuKqJnw3lnqOJF70Pw6BtW5UpJeAxvPBaBUXZW2qjzL8zFXeXM5vKGkM3FhcBOxs="
+  }
+}
