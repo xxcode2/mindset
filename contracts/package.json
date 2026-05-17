@@ -1,0 +1,22 @@
+{
+  "name": "mindset-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mindset HabitStaking smart contracts",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:base-sepolia": "hardhat run scripts/deploy.ts --network baseSepolia",
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "node": "hardhat node",
+    "verify": "hardhat verify"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^20.11.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
