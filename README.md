@@ -194,17 +194,24 @@ mindset/
 │   │   ├── PredictionMarket.sol
 │   │   └── MockUSDC.sol           # testnet faucet token (6 decimals)
 │   ├── scripts/deploy.ts
-│   ├── test/PredictionMarket.test.ts
-│   └── hardhat.config.ts
+│   ├── test/PredictionMarket.test.ts    # 17 tests (market + Chainlink resolver)
+│   ├── hardhat.config.ts
+│   └── contracts/
+│       ├── PredictionMarket.sol
+│       ├── ChainlinkPriceResolver.sol   # trustless auto-resolve for price markets
+│       ├── MockUSDC.sol                 # testnet faucet token (6 decimals)
+│       └── MockAggregator.sol           # test-only Chainlink feed mock
 └── frontend/
     ├── app/
     │   ├── .well-known/farcaster.json/route.ts   # Farcaster manifest
+    │   ├── icon.tsx                               # dynamic favicon (edge PNG)
+    │   ├── opengraph-image.tsx                    # dynamic OG card (edge PNG)
     │   ├── layout.tsx                             # fc:miniapp meta + fonts + providers
-    │   ├── page.tsx                               # /  (Hero)
+    │   ├── page.tsx                               # /  (Hero + How It Works)
     │   ├── markets/page.tsx                       # /markets
     │   ├── markets/[id]/page.tsx                  # /markets/123
     │   ├── dashboard/page.tsx                     # /dashboard
-    │   ├── create/page.tsx                        # /create
+    │   ├── create/page.tsx                        # /create (category tabs + Chainlink flow)
     │   ├── providers.tsx
     │   └── globals.css
     ├── components/
@@ -213,15 +220,18 @@ mindset/
     │   ├── ConnectButton.tsx
     │   ├── ParticlesBg.tsx
     │   ├── Toaster.tsx
-    │   ├── MarketCard.tsx
+    │   ├── MarketCard.tsx                         # category badges + pool bar
     │   ├── BetPanel.tsx
     │   └── MarketActivity.tsx
-    └── lib/
-        ├── contract.ts            # ABIs, addresses, types, status helpers
-        ├── wagmi.ts               # dual-mode connector setup (Farcaster + web)
-        ├── hooks.ts               # useAllMarkets, useMarket
-        ├── toast.ts               # tiny pub/sub toast bus
-        └── utils.ts               # token/time formatters
+    ├── lib/
+    │   ├── contract.ts            # ABIs, addresses, types, price feed catalog
+    │   ├── wagmi.ts               # dual-mode connector setup (Farcaster + web)
+    │   ├── hooks.ts               # useAllMarkets, useMarket
+    │   ├── toast.ts               # tiny pub/sub toast bus
+    │   └── utils.ts               # token/time formatters
+    └── public/
+        ├── icon.svg               # static SVG fallback
+        └── splash.svg             # Farcaster splash screen fallback
 ```
 
 ---
