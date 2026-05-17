@@ -14,8 +14,8 @@ type Activity = {
   amount: bigint;
 };
 
-/** Lists recent BetPlaced events for a single market. */
-export function MarketActivity({ marketId }: { marketId: bigint }) {
+/** Lists recent BetPlaced events for a single market. Refetches when refreshKey changes. */
+export function MarketActivity({ marketId, refreshKey = 0 }: { marketId: bigint; refreshKey?: number }) {
   const client = usePublicClient();
   const [activity, setActivity] = useState<Activity[] | null>(null);
 
@@ -25,8 +25,9 @@ export function MarketActivity({ marketId }: { marketId: bigint }) {
     (async () => {
       try {
         const block = await client.getBlockNumber();
-        // Look back ~50k blocks (~24h on Base) to keep RPC light.
-        const fromBlock = block > 50_000n ? block - 50_000n : 0n;
+        // Look back ~10k blocks to stay within free RPC limits on Base Sepolia.
+        // On Base mainnet (2s blocks) this is ~5.5 hours. Enough for recent activity.
+        const fromBlock = block > 10_000n ? block - 10_000n : 0n;
         const logs = await client.getLogs({
           address: CONTRACT_ADDRESS,
           event: {
@@ -77,7 +78,7 @@ export function MarketActivity({ marketId }: { marketId: bigint }) {
     return () => {
       cancelled = true;
     };
-  }, [client, marketId]);
+  }, [client, marketId, refreshKey]);
 
   if (activity === null) {
     return (
