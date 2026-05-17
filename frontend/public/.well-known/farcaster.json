@@ -10,7 +10,7 @@
     "splashBackgroundColor": "#05050f",
     "webhookUrl": "https://mindset-rosy.vercel.app/api/webhook",
     "subtitle": "Prediction Market",
-    "description": "Non-custodial parimutuel YES/NO prediction markets on Base. Take a side, win the pool.",
+    "description": "Non-custodial parimutuel YES or NO prediction markets on Base. Take a side, win the pool.",
     "primaryCategory": "social",
     "screenshotUrls": [
       "https://mindset-rosy.vercel.app/mindset-nobg.jpg"
