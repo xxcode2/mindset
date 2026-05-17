@@ -33,18 +33,23 @@ async function main() {
   const pm = await Pm.deploy(tokenAddress, feeRecipient);
   await pm.waitForDeployment();
   const pmAddress = await pm.getAddress();
+  console.log("\nPredictionMarket:", pmAddress);
 
-  console.log("\nPredictionMarket deployed to:", pmAddress);
+  // Deploy ChainlinkPriceResolver — auto-resolves Price-category markets.
+  const Resolver = await ethers.getContractFactory("ChainlinkPriceResolver");
+  const resolver = await Resolver.deploy(pmAddress);
+  await resolver.waitForDeployment();
+  const resolverAddress = await resolver.getAddress();
+  console.log("ChainlinkPriceResolver:", resolverAddress);
 
   // Persist a small JSON for the frontend to pick up.
   const out = path.join(__dirname, "..", "deployments.json");
   let existing: Record<string, any> = {};
-  if (fs.existsSync(out)) {
-    existing = JSON.parse(fs.readFileSync(out, "utf8"));
-  }
+  if (fs.existsSync(out)) existing = JSON.parse(fs.readFileSync(out, "utf8"));
   existing[network.name] = {
     chainId: Number((await ethers.provider.getNetwork()).chainId),
     predictionMarket: pmAddress,
+    chainlinkPriceResolver: resolverAddress,
     bettingToken: tokenAddress,
     feeRecipient,
     mockDeployed,
@@ -57,7 +62,10 @@ async function main() {
   console.log(`  Add to frontend/.env.local:`);
   console.log(`    NEXT_PUBLIC_CONTRACT_ADDRESS=${pmAddress}`);
   console.log(`    NEXT_PUBLIC_TOKEN_ADDRESS=${tokenAddress}`);
-  console.log(`  Verify: npx hardhat verify --network ${network.name} ${pmAddress} ${tokenAddress} ${feeRecipient}`);
+  console.log(`    NEXT_PUBLIC_PRICE_RESOLVER_ADDRESS=${resolverAddress}`);
+  console.log(`  Verify:`);
+  console.log(`    npx hardhat verify --network ${network.name} ${pmAddress} ${tokenAddress} ${feeRecipient}`);
+  console.log(`    npx hardhat verify --network ${network.name} ${resolverAddress} ${pmAddress}`);
 }
 
 main().catch((e) => {
