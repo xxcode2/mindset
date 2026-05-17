@@ -14,9 +14,9 @@ export async function GET() {
       version: "1",
       iconUrl: `${APP_URL}/mindset-nobg.jpg`,
       homeUrl: APP_URL,
-      subtitle: "Prediction markets on Farcaster",
+      subtitle: "Prediction markets on Base",
       description:
-        "Non-custodial parimutuel YES/NO prediction markets on Base. Take a side, win the pool.",
+        "Non-custodial parimutuel prediction markets on Base. Take a side, win the pool.",
       primaryCategory: "social",
       imageUrl: `${APP_URL}/mindset.jpg`,
       heroImageUrl: `${APP_URL}/mindset-nobg.jpg`,
@@ -27,7 +27,7 @@ export async function GET() {
       buttonTitle: "Open Mindset",
       ogTitle: "Mindset - Prediction Markets",
       ogDescription:
-        "prediction markets on Base. Take a side, win the pool.",
+        "Parimutuel prediction markets on Base. Take a side, win the pool.",
       ogImageUrl: `${APP_URL}/mindset.jpg`,
     },
   });
