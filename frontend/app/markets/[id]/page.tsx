@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAccount, useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { BetPanel } from "@/components/BetPanel";
 import { MarketActivity } from "@/components/MarketActivity";
@@ -32,13 +32,14 @@ export default function MarketDetailPage() {
     }
   })();
   const { address } = useAccount();
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const { data, isLoading, refetch } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: predictionMarketAbi,
     functionName: "getMarket",
     args: marketId !== undefined ? [marketId] : undefined,
-    query: { enabled: marketId !== undefined },
+    query: { enabled: marketId !== undefined, refetchInterval: 12_000 },
   });
 
   const userBatch = useReadContracts({
@@ -83,6 +84,7 @@ export default function MarketDetailPage() {
       claimTx.reset();
       refetch();
       userBatch.refetch();
+      setRefreshKey((k) => k + 1);
     }
   }, [claimMined.isSuccess]); // eslint-disable-line
   useEffect(() => {
@@ -91,6 +93,7 @@ export default function MarketDetailPage() {
       refundTx.reset();
       refetch();
       userBatch.refetch();
+      setRefreshKey((k) => k + 1);
     }
   }, [refundMined.isSuccess]); // eslint-disable-line
   useEffect(() => {
@@ -98,6 +101,7 @@ export default function MarketDetailPage() {
       pushToast("Market resolved", "success");
       resolveTx.reset();
       refetch();
+      setRefreshKey((k) => k + 1);
     }
   }, [resolveMined.isSuccess]); // eslint-disable-line
   useEffect(() => {
@@ -105,6 +109,7 @@ export default function MarketDetailPage() {
       pushToast("Market marked invalid", "info");
       invalidateTx.reset();
       refetch();
+      setRefreshKey((k) => k + 1);
     }
   }, [invalidateMined.isSuccess]); // eslint-disable-line
 
@@ -325,7 +330,7 @@ export default function MarketDetailPage() {
             <h3 className="mb-4 text-base font-semibold" style={{ color: "#e2e8f0" }}>
               Pool Activity
             </h3>
-            <MarketActivity marketId={marketId} />
+            <MarketActivity marketId={marketId} refreshKey={refreshKey} />
           </div>
         </div>
 
@@ -336,6 +341,7 @@ export default function MarketDetailPage() {
             onPlaced={() => {
               refetch();
               userBatch.refetch();
+              setRefreshKey((k) => k + 1);
             }}
           />
         </div>
