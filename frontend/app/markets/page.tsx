@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MarketCard } from "@/components/MarketCard";
 import { useAllMarkets } from "@/lib/hooks";
@@ -64,6 +64,10 @@ function MarketsContent() {
     ? (searchParams.get("sort") as SortKey)
     : "newest");
 
+  const search = searchParams.get("q") ?? "";
+  const [searchInput, setSearchInput] = useState(search);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
 
   const { markets, total, isLoading } = useAllMarkets(pageSize);
@@ -82,8 +86,24 @@ function MarketsContent() {
     [router, searchParams]
   );
 
+  const handleSearch = useCallback(
+    (value: string) => {
+      setSearchInput(value);
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+      searchTimeout.current = setTimeout(() => {
+        updateParam("q", value.trim(), "");
+      }, 300);
+    },
+    [updateParam]
+  );
+
   const filtered = useMemo(() => {
+    const q = search.toLowerCase();
     return markets.filter(({ market }) => {
+      // Search filter
+      if (q && !market.question.toLowerCase().includes(q) && !market.description.toLowerCase().includes(q)) {
+        return false;
+      }
       if (filter !== "all") {
         const s = statusFromMarket(market);
         if (filter === "resolved") {
@@ -98,7 +118,7 @@ function MarketsContent() {
       }
       return true;
     });
-  }, [markets, filter, category]);
+  }, [markets, filter, category, search]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -146,6 +166,35 @@ function MarketsContent() {
       </div>
 
       {!isContractConfigured && <NotConfiguredBanner />}
+
+      {/* Search bar */}
+      <div className="mb-6 relative">
+        <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(148,163,184,0.5)" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+        </div>
+        <input
+          type="text"
+          value={searchInput}
+          onChange={(e) => handleSearch(e.target.value)}
+          placeholder="Search markets by question or description..."
+          className="input-field w-full rounded-xl py-3 pl-11 pr-4 text-sm"
+        />
+        {searchInput && (
+          <button
+            onClick={() => handleSearch("")}
+            className="absolute inset-y-0 right-0 flex items-center pr-4"
+            style={{ color: "rgba(148,163,184,0.5)" }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
+      </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
@@ -237,6 +286,8 @@ function MarketsContent() {
           <p className="text-sm" style={{ color: "rgba(148,163,184,0.6)" }}>
             {markets.length === 0
               ? "No markets yet. Be the first to create one!"
+              : search
+              ? `No markets matching "${search}".`
               : category !== "all"
               ? `No ${category} markets match this filter.`
               : "No markets match this filter."}
