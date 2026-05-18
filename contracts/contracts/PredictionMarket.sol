@@ -198,6 +198,18 @@ contract PredictionMarket {
         if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
         if (block.timestamp < m.closeTime) revert MarketNotClosed();
 
+        uint256 winningPool = yesWon ? m.yesPool : m.noPool;
+
+        // Edge case: if no one bet on the winning side, no one can claim. Falling through with
+        // a normal resolve would let the fee leave the contract and trap the rest of the funds.
+        // Instead, mark the market Invalid so every bettor can refund their original stake.
+        if (winningPool == 0) {
+            m.outcome = Outcome.Invalid;
+            emit MarketInvalidated(marketId);
+            emit MarketResolved(marketId, Outcome.Invalid, 0);
+            return;
+        }
+
         m.outcome = yesWon ? Outcome.Yes : Outcome.No;
 
         uint256 losingPool = yesWon ? m.noPool : m.yesPool;

@@ -157,6 +157,34 @@ export const predictionMarketAbi = [
     outputs: [{ type: "uint16" }],
     stateMutability: "view",
   },
+  // ─── Events ───
+  {
+    type: "event",
+    name: "MarketCreated",
+    inputs: [
+      { name: "marketId", type: "uint256", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "resolver", type: "address", indexed: true },
+      { name: "question", type: "string", indexed: false },
+      { name: "description", type: "string", indexed: false },
+      { name: "closeTime", type: "uint64", indexed: false },
+      { name: "category", type: "uint8", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "BetPlaced",
+    inputs: [
+      { name: "marketId", type: "uint256", indexed: true },
+      { name: "bettor", type: "address", indexed: true },
+      { name: "yes", type: "bool", indexed: false },
+      { name: "amount", type: "uint256", indexed: false },
+      { name: "newYesPool", type: "uint128", indexed: false },
+      { name: "newNoPool", type: "uint128", indexed: false },
+    ],
+    anonymous: false,
+  },
 ] as const;
 
 // ───────────────────── ERC20 ABI (minimal, with faucet) ────────────────────

@@ -55,7 +55,7 @@ describe("PredictionMarket", () => {
     expect(await pm.impliedYesBps(0)).to.equal(5000);
   });
 
-  it("pays winners proportionally with 1% fee on losing pool", async () => {
+  it("pays winners proportionally with 5% fee on losing pool", async () => {
     const { pm, usdc, alice, bob, carol, resolver, fee } = await deploy();
     await newMarket(pm, resolver);
 
@@ -147,6 +147,35 @@ describe("PredictionMarket", () => {
     await pm.connect(alice).bet(0, true, 10n * ONE);
     const m = await pm.getMarket(0);
     expect(m.yesBettors).to.equal(1);
+  });
+
+  it("falls back to Invalid (refunds) when winning pool is empty", async () => {
+    const { pm, usdc, alice, bob, resolver, fee } = await deploy();
+    await newMarket(pm, resolver);
+
+    // Only NO bets — no one bet YES
+    await pm.connect(alice).bet(0, false, 100n * ONE);
+    await pm.connect(bob).bet(0, false, 50n * ONE);
+
+    await time.increase(2 * 24 * 3600);
+
+    // Resolver tries to resolve YES → no YES bettors → must auto-invalidate.
+    const feeBefore = await usdc.balanceOf(fee.address);
+    await expect(pm.connect(resolver).resolve(0, true)).to.emit(pm, "MarketInvalidated");
+    const feeAfter = await usdc.balanceOf(fee.address);
+    expect(feeAfter - feeBefore).to.equal(0n); // no fee taken
+
+    const m = await pm.getMarket(0);
+    expect(m.outcome).to.equal(3); // Invalid
+
+    // Bettors can refund their full stake
+    const aliceBefore = await usdc.balanceOf(alice.address);
+    await pm.connect(alice).refund(0);
+    expect((await usdc.balanceOf(alice.address)) - aliceBefore).to.equal(100n * ONE);
+
+    const bobBefore = await usdc.balanceOf(bob.address);
+    await pm.connect(bob).refund(0);
+    expect((await usdc.balanceOf(bob.address)) - bobBefore).to.equal(50n * ONE);
   });
 });
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { sdk } from "@farcaster/miniapp-sdk";
 import { useAccount, useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { BetPanel } from "@/components/BetPanel";
 import { MarketActivity } from "@/components/MarketActivity";
@@ -148,8 +149,12 @@ export default function MarketDetailPage() {
   const isWinner = (market.outcome === 1 && myYes > 0n) || (market.outcome === 2 && myNo > 0n);
   const canRefund = market.outcome === 3 && (myYes > 0n || myNo > 0n) && !claimed;
 
-  const canMarkInvalid =
-    market.outcome === 0 && Date.now() / 1000 >= closeSec + 7 * 24 * 3600;
+  // Grace period: 7 days after closeTime. After that, anyone can mark invalid.
+  const GRACE_SEC = 7 * 24 * 3600;
+  const graceEndsAt = closeSec + GRACE_SEC;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const inGracePeriod = market.outcome === 0 && nowSec >= closeSec && nowSec < graceEndsAt;
+  const canMarkInvalid = market.outcome === 0 && nowSec >= graceEndsAt;
 
   const statusLabel =
     status === "resolved" && market.outcome === 1
@@ -312,7 +317,6 @@ export default function MarketDetailPage() {
                   Grace expired — mark invalid
                 </button>
               )}
-              {/* Auto-resolve for Price markets via Chainlink */}
               {status === "closed" && market.resolver.toLowerCase() === PRICE_RESOLVER_ADDRESS.toLowerCase() && PRICE_RESOLVER_ADDRESS !== "0x0000000000000000000000000000000000000000" && (
                 <button
                   className="btn-primary rounded-xl px-5 py-2.5 text-sm"
@@ -332,13 +336,45 @@ export default function MarketDetailPage() {
               )}
             </div>
 
+            {/* Grace period countdown — shown when closed but resolver hasn't acted yet */}
+            {inGracePeriod && (
+              <div
+                className="mt-4 rounded-xl px-4 py-3 text-xs"
+                style={{
+                  background: "rgba(251,191,36,0.08)",
+                  border: "1px solid rgba(251,191,36,0.2)",
+                  color: "#fcd34d",
+                }}
+              >
+                <div className="font-semibold" style={{ color: "#fde68a" }}>
+                  Awaiting resolver
+                </div>
+                <div className="mt-1" style={{ color: "rgba(253,230,138,0.75)" }}>
+                  If not resolved, refunds become available in {fmtCountdown(graceEndsAt)}.
+                </div>
+              </div>
+            )}
+
             {/* Share on Farcaster */}
             <div className="mt-4">
               <button
-                onClick={() => {
+                onClick={async () => {
                   const marketUrl = `${APP_URL}/markets/${marketId.toString()}`;
-                  const text = encodeURIComponent(`${market.question}\n\nBet on it:`);
-                  const shareUrl = `https://warpcast.com/~/compose?text=${text}&embeds[]=${encodeURIComponent(marketUrl)}`;
+                  const text = `${market.question}\n\nBet on it:`;
+                  // Try native Farcaster compose first (when running inside a Farcaster client),
+                  // fall back to the warpcast.com web compose URL on plain web.
+                  try {
+                    const isMini = await sdk.isInMiniApp();
+                    if (isMini) {
+                      await sdk.actions.composeCast({ text, embeds: [marketUrl] });
+                      return;
+                    }
+                  } catch {
+                    // SDK not available or rejected — fall through to web fallback
+                  }
+                  const shareUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(
+                    text
+                  )}&embeds[]=${encodeURIComponent(marketUrl)}`;
                   window.open(shareUrl, "_blank", "noopener,noreferrer");
                 }}
                 className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-medium transition hover:bg-white/5"
