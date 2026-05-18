@@ -118,6 +118,18 @@ export default function MarketDetailPage() {
     }
   }, [invalidateMined.isSuccess]); // eslint-disable-line
 
+  // Dynamic page title based on market question
+  useEffect(() => {
+    if (data) {
+      const m = data as Market;
+      const q = m.question.length > 60 ? m.question.slice(0, 57) + "…" : m.question;
+      document.title = `${q} — MINDSET`;
+    }
+    return () => {
+      document.title = "MINDSET — Prediction Markets on Farcaster";
+    };
+  }, [data]);
+
   if (marketId === undefined) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">

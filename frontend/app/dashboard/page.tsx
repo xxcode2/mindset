@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   useAccount,
   useReadContract,
@@ -23,8 +23,11 @@ import { fmtAddr, fmtCompactUsd, fmtToken } from "@/lib/utils";
 import { pushToast } from "@/lib/toast";
 import { useEffect } from "react";
 
+const POSITIONS_PAGE_SIZE = 20;
+
 export default function DashboardPage() {
   const { address, isConnected } = useAccount();
+  const [visibleCount, setVisibleCount] = useState(POSITIONS_PAGE_SIZE);
 
   const { data: balance } = useReadContract({
     address: TOKEN_ADDRESS,
@@ -41,9 +44,14 @@ export default function DashboardPage() {
     args: address ? [address] : undefined,
     query: { enabled: !!address },
   });
-  const ids = (idsRaw as bigint[] | undefined) ?? [];
+  const allIds = (idsRaw as bigint[] | undefined) ?? [];
 
-  // Fetch all market structs + per-position bet sizes + claim status in one batch.
+  // Show newest first (reverse), paginated
+  const idsReversed = useMemo(() => [...allIds].reverse(), [allIds]);
+  const ids = idsReversed.slice(0, visibleCount);
+  const hasMore = idsReversed.length > visibleCount;
+
+  // Fetch market structs + per-position bet sizes + claim status in one batch (only for visible ids).
   const detailContracts = ids.flatMap((id) => [
     {
       address: CONTRACT_ADDRESS as `0x${string}`,
@@ -96,7 +104,7 @@ export default function DashboardPage() {
     let active = 0;
     let claimable = 0;
     let totalStaked = 0n;
-    let totalSettled = 0n; // simple "potential" sum: claimed wins (counted as their bet) - claimed losses
+    let totalSettled = 0n;
     for (const p of positions) {
       if (!p.market) continue;
       const stake = p.yesBet + p.noBet;
@@ -111,7 +119,7 @@ export default function DashboardPage() {
         (p.market.outcome === 2 && p.yesBet > 0n);
       if (isWinner && !p.claimed) claimable++;
       if (p.market.outcome === 3 && stake > 0n && !p.claimed) claimable++;
-      if (isLoser) totalSettled -= stake; // realized loss
+      if (isLoser) totalSettled -= stake;
     }
     return { active, claimable, totalStaked, totalSettled };
   }, [positions]);
@@ -219,10 +227,15 @@ export default function DashboardPage() {
 
       {/* Positions table */}
       <div className="glass-card overflow-hidden">
-        <div className="p-6 pb-4">
+        <div className="flex items-center justify-between p-6 pb-4">
           <h3 className="text-base font-semibold" style={{ color: "#e2e8f0" }}>
             Your Positions
           </h3>
+          {allIds.length > 0 && (
+            <span className="text-xs" style={{ color: "rgba(148,163,184,0.4)" }}>
+              {positions.length} of {allIds.length} shown
+            </span>
+          )}
         </div>
         <div className="overflow-x-auto">
           {positions.length === 0 ? (
@@ -346,6 +359,21 @@ export default function DashboardPage() {
             </table>
           )}
         </div>
+        {hasMore && (
+          <div className="flex justify-center px-6 pb-6">
+            <button
+              onClick={() => setVisibleCount((c) => c + POSITIONS_PAGE_SIZE)}
+              className="rounded-xl px-6 py-2.5 text-sm font-medium transition"
+              style={{
+                background: "rgba(99,102,241,0.1)",
+                border: "1px solid rgba(99,102,241,0.25)",
+                color: "#a5b4fc",
+              }}
+            >
+              Show more · {allIds.length - visibleCount} remaining
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );
