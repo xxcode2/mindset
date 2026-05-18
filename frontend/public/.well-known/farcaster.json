@@ -3,7 +3,7 @@
     "name": "Mindset",
     "version": "1",
     "iconUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg",
-    "homeUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg"",
+    "homeUrl": "https://mindset-rosy.vercel.app",
     "imageUrl": "https://mindset-rosy.vercel.app/mindset.jpg",
     "buttonTitle": "Open Mindset",
     "splashImageUrl": "https://mindset-rosy.vercel.app/mindset.jpg",
@@ -21,7 +21,7 @@
     "ogDescription": "prediction markets on Base. Take a side, win the pool.",
     "ogTitle": "Mindset - Prediction Markets",
     "ogImageUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg",
-    "castShareUrl": "https://mindset-rosy.vercel.app/mindset-nobg.jpg"
+    "castShareUrl": "https://mindset-rosy.vercel.app"
   },
   "accountAssociation": {
     "header": "eyJmaWQiOjIzNjM0NCwidHlwZSI6ImF1dGgiLCJrZXkiOiIweGMxRWI5MDIxMTUwMDg5NWQ2RmJBZjFENjk4MTMyNzhGMzgwOEExYkEifQ",
