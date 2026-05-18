@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { MarketCard } from "@/components/MarketCard";
 import { useAllMarkets } from "@/lib/hooks";
-import { isContractConfigured, statusFromMarket } from "@/lib/contract";
+import { CATEGORIES, isContractConfigured, statusFromMarket } from "@/lib/contract";
 import { classNames } from "@/lib/utils";
 
 const FILTERS = [
@@ -14,19 +14,52 @@ const FILTERS = [
 ] as const;
 
 type FilterKey = (typeof FILTERS)[number]["key"];
+type CategoryFilter = "all" | (typeof CATEGORIES)[number];
+
+const CATEGORY_FILTERS: { key: CategoryFilter; label: string; icon?: string }[] = [
+  { key: "all", label: "All" },
+  { key: "Crypto", label: "Crypto", icon: "🪙" },
+  { key: "Sports", label: "Sports", icon: "⚽" },
+  { key: "Price", label: "Price", icon: "📈" },
+  { key: "Politics", label: "Politics", icon: "🏛️" },
+  { key: "Social", label: "Social", icon: "💬" },
+  { key: "Custom", label: "Custom", icon: "⚙️" },
+];
 
 export default function MarketsPage() {
   const { markets, isLoading } = useAllMarkets();
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [category, setCategory] = useState<CategoryFilter>("all");
 
   const filtered = useMemo(() => {
-    if (filter === "all") return markets;
     return markets.filter(({ market }) => {
-      const s = statusFromMarket(market);
-      if (filter === "resolved") return s === "resolved" || s === "invalid";
-      return s === filter;
+      // Status filter
+      if (filter !== "all") {
+        const s = statusFromMarket(market);
+        if (filter === "resolved") {
+          if (s !== "resolved" && s !== "invalid") return false;
+        } else if (s !== filter) {
+          return false;
+        }
+      }
+      // Category filter
+      if (category !== "all") {
+        const catName = CATEGORIES[market.category ?? 0];
+        if (catName !== category) return false;
+      }
+      return true;
     });
-  }, [markets, filter]);
+  }, [markets, filter, category]);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: markets.length };
+    for (const c of CATEGORIES) counts[c] = 0;
+    for (const { market } of markets) {
+      const name = CATEGORIES[market.category ?? 0];
+      if (name) counts[name] = (counts[name] ?? 0) + 1;
+    }
+    return counts;
+  }, [markets]);
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -41,7 +74,7 @@ export default function MarketsPage() {
 
       {!isContractConfigured && <NotConfiguredBanner />}
 
-      <div className="mb-8 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -59,6 +92,38 @@ export default function MarketsPage() {
         ))}
       </div>
 
+      <div className="mb-8 flex flex-wrap gap-2">
+        {CATEGORY_FILTERS.map((c) => {
+          const active = category === c.key;
+          const count = categoryCounts[c.key] ?? 0;
+          return (
+            <button
+              key={c.key}
+              onClick={() => setCategory(c.key)}
+              className={classNames(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition",
+                active
+                  ? "border-[rgba(99,102,241,0.35)] bg-[rgba(99,102,241,0.12)] text-[#a5b4fc]"
+                  : "border-[rgba(148,163,184,0.12)] bg-transparent text-[rgba(148,163,184,0.55)] hover:text-white"
+              )}
+              style={{ borderWidth: 1, borderStyle: "solid" }}
+            >
+              {c.icon && <span>{c.icon}</span>}
+              <span>{c.label}</span>
+              <span
+                className="rounded-full px-1.5 py-px font-mono text-[10px]"
+                style={{
+                  background: active ? "rgba(99,102,241,0.18)" : "rgba(148,163,184,0.08)",
+                  color: active ? "#c7d2fe" : "rgba(148,163,184,0.6)",
+                }}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {isLoading ? (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -68,7 +133,11 @@ export default function MarketsPage() {
       ) : filtered.length === 0 ? (
         <div className="glass-card p-12 text-center">
           <p className="text-sm" style={{ color: "rgba(148,163,184,0.6)" }}>
-            {markets.length === 0 ? "No markets yet. Be the first to create one!" : "No markets match this filter."}
+            {markets.length === 0
+              ? "No markets yet. Be the first to create one!"
+              : category !== "all"
+              ? `No ${category} markets match this filter.`
+              : "No markets match this filter."}
           </p>
         </div>
       ) : (
