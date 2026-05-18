@@ -355,8 +355,8 @@ export default function MarketDetailPage() {
               </div>
             )}
 
-            {/* Share on Farcaster */}
-            <div className="mt-4">
+            {/* Share buttons */}
+            <div className="mt-4 flex flex-wrap gap-3">
               <button
                 onClick={async () => {
                   const marketUrl = `${APP_URL}/markets/${marketId.toString()}`;
@@ -386,6 +386,21 @@ export default function MarketDetailPage() {
                   <line x1="12" y1="2" x2="12" y2="15" />
                 </svg>
                 Share on Farcaster
+              </button>
+              <button
+                onClick={() => {
+                  const marketUrl = `${APP_URL}/markets/${marketId.toString()}`;
+                  const text = `${market.question}\n\nPredict now on @mindset_base:`;
+                  const twitterUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(marketUrl)}`;
+                  window.open(twitterUrl, "_blank", "noopener,noreferrer");
+                }}
+                className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-medium transition hover:bg-white/5"
+                style={{ border: "1px solid rgba(148,163,184,0.2)", color: "rgba(148,163,184,0.7)" }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+                Share on X
               </button>
             </div>
 

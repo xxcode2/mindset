@@ -14,65 +14,112 @@ type Activity = {
   amount: bigint;
 };
 
+const BET_PLACED_EVENT = {
+  type: "event" as const,
+  name: "BetPlaced" as const,
+  inputs: [
+    { name: "marketId", type: "uint256" as const, indexed: true },
+    { name: "bettor", type: "address" as const, indexed: true },
+    { name: "yes", type: "bool" as const, indexed: false },
+    { name: "amount", type: "uint256" as const, indexed: false },
+    { name: "newYesPool", type: "uint128" as const, indexed: false },
+    { name: "newNoPool", type: "uint128" as const, indexed: false },
+  ],
+};
+
+/**
+ * Fetches logs in chunks to work around RPC range limits.
+ * Starts from the largest range and falls back to smaller chunks if the RPC rejects.
+ */
+async function fetchLogsChunked(
+  client: any,
+  marketId: bigint,
+  latestBlock: bigint,
+): Promise<Log[]> {
+  // Try progressively smaller ranges: all history → 100k → 50k → 10k
+  const ranges = [latestBlock, 100_000n, 50_000n, 10_000n];
+
+  for (const range of ranges) {
+    const fromBlock = latestBlock > range ? latestBlock - range : 0n;
+    try {
+      const logs = await client.getLogs({
+        address: CONTRACT_ADDRESS,
+        event: BET_PLACED_EVENT,
+        args: { marketId },
+        fromBlock,
+        toBlock: "latest",
+      });
+      return logs as Log[];
+    } catch (e: any) {
+      // If the error is about range being too large, try smaller range
+      const msg = e?.message?.toLowerCase() ?? "";
+      if (
+        msg.includes("range") ||
+        msg.includes("block") ||
+        msg.includes("limit") ||
+        msg.includes("timeout") ||
+        msg.includes("exceed")
+      ) {
+        continue;
+      }
+      // Unknown error — don't retry, throw
+      throw e;
+    }
+  }
+
+  // All ranges failed — return empty
+  return [];
+}
+
 /** Lists recent BetPlaced events for a single market. Refetches when refreshKey changes. */
 export function MarketActivity({ marketId, refreshKey = 0 }: { marketId: bigint; refreshKey?: number }) {
   const client = usePublicClient();
   const [activity, setActivity] = useState<Activity[] | null>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     if (!client) return;
     (async () => {
       try {
+        setError(false);
         const block = await client.getBlockNumber();
-        // Look back ~10k blocks to stay within free RPC limits on Base Sepolia.
-        // On Base mainnet (2s blocks) this is ~5.5 hours. Enough for recent activity.
-        const fromBlock = block > 10_000n ? block - 10_000n : 0n;
-        const logs = await client.getLogs({
-          address: CONTRACT_ADDRESS,
-          event: {
-            type: "event",
-            name: "BetPlaced",
-            inputs: [
-              { name: "marketId", type: "uint256", indexed: true },
-              { name: "bettor", type: "address", indexed: true },
-              { name: "yes", type: "bool", indexed: false },
-              { name: "amount", type: "uint256", indexed: false },
-              { name: "newYesPool", type: "uint128", indexed: false },
-              { name: "newNoPool", type: "uint128", indexed: false },
-            ],
-          },
-          args: { marketId },
-          fromBlock,
-          toBlock: "latest",
-        });
+        const logs = await fetchLogsChunked(client, marketId, block);
         if (cancelled) return;
-        const items = (logs as Log[])
+        const items = logs
           .map((l) => {
-            const decoded = decodeEventLog({
-              abi: predictionMarketAbi,
-              data: l.data,
-              topics: l.topics,
-            });
-            const a = decoded.args as any;
-            return {
-              blockNumber: l.blockNumber!,
-              logIndex: l.logIndex!,
-              bettor: a.bettor as `0x${string}`,
-              yes: a.yes as boolean,
-              amount: a.amount as bigint,
-            };
+            try {
+              const decoded = decodeEventLog({
+                abi: predictionMarketAbi,
+                data: l.data,
+                topics: l.topics,
+              });
+              const a = decoded.args as any;
+              return {
+                blockNumber: l.blockNumber!,
+                logIndex: l.logIndex!,
+                bettor: a.bettor as `0x${string}`,
+                yes: a.yes as boolean,
+                amount: a.amount as bigint,
+              };
+            } catch {
+              return null;
+            }
           })
+          .filter((x): x is Activity => x !== null)
           .sort((a, b) =>
             a.blockNumber === b.blockNumber
               ? b.logIndex - a.logIndex
               : Number(b.blockNumber - a.blockNumber)
           )
-          .slice(0, 12);
+          .slice(0, 20);
         setActivity(items);
       } catch (e) {
         console.error("activity fetch failed", e);
-        setActivity([]);
+        if (!cancelled) {
+          setError(true);
+          setActivity([]);
+        }
       }
     })();
     return () => {
@@ -87,6 +134,14 @@ export function MarketActivity({ marketId, refreshKey = 0 }: { marketId: bigint;
           <div key={i} className="h-12 animate-pulse rounded-xl bg-white/5" />
         ))}
       </div>
+    );
+  }
+
+  if (error && activity.length === 0) {
+    return (
+      <p className="text-sm" style={{ color: "rgba(248,113,113,0.7)" }}>
+        Failed to load activity. The RPC may be rate-limited — try refreshing.
+      </p>
     );
   }
 

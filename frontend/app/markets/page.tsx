@@ -305,15 +305,33 @@ function MarketsContent() {
             <div className="mt-8 flex justify-center">
               <button
                 onClick={() => setPageSize((s) => s + PAGE_SIZE)}
-                className="rounded-xl px-6 py-3 text-sm font-medium transition"
+                disabled={isLoading}
+                className="rounded-xl px-6 py-3 text-sm font-medium transition disabled:opacity-50"
                 style={{
                   background: "rgba(99,102,241,0.1)",
                   border: "1px solid rgba(99,102,241,0.25)",
                   color: "#a5b4fc",
                 }}
               >
-                Load more · showing {markets.length} of {total}
+                {isLoading ? (
+                  <span className="inline-flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" />
+                    </svg>
+                    Loading…
+                  </span>
+                ) : (
+                  `Load more · showing ${sorted.length} of ${total}`
+                )}
               </button>
+            </div>
+          )}
+
+          {!hasMore && sorted.length > 0 && (
+            <div className="mt-8 text-center">
+              <span className="text-xs" style={{ color: "rgba(148,163,184,0.4)" }}>
+                Showing all {sorted.length} market{sorted.length !== 1 ? "s" : ""}
+              </span>
             </div>
           )}
         </>

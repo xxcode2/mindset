@@ -1,6 +1,6 @@
 # MINDSET
 
-> Prediction markets on Farcaster.
+> Prediction markets on Farcaster & Base.
 
 Non-custodial parimutuel YES/NO prediction markets on **Base**. Take a side in any market with USDC. When the market resolves, winners split the entire pool — losing stakes top up the prize. The smart contract is the only custodian; there is no admin and no upgrade path.
 
@@ -12,6 +12,23 @@ frontend/    Next.js 14 + wagmi v2 + Farcaster Mini App SDK + Tailwind
 This repository deploys both:
 - A **standalone web app** at any URL you host on (Vercel, Netlify, etc.)
 - A **Farcaster Mini App** discoverable inside Farcaster clients, from the same codebase.
+- A **Base App** registered with domain verification (`base:app_id` meta tag).
+
+---
+
+## Features
+
+- **6 market categories** — Custom, Price, Sports, Politics, Social, Crypto
+- **Chainlink auto-resolution** — Price-category markets resolve trustlessly via Chainlink oracles
+- **Leaderboard** — Top market creators ranked by volume attracted
+- **Share to Farcaster & X/Twitter** — One-click sharing per market
+- **Network mismatch warning** — Alerts users on wrong chain with one-click switch
+- **Error boundary** — Graceful error handling instead of blank pages
+- **Farcaster webhook** — Receives Mini App lifecycle events (installs, removals, notifications)
+- **Responsive mobile UX** — Wallet connect + faucet accessible on all screen sizes
+- **Paginated markets** — Load-more pagination with loading states
+- **Dynamic OG images** — Per-market social cards generated at the edge
+- **Base App integration** — Registered with `base:app_id` for Base platform discovery
 
 ---
 
@@ -167,8 +184,9 @@ Open http://localhost:3000, connect a wallet on Base Sepolia, click **Faucet MUS
 
 Already wired:
 
-- `app/.well-known/farcaster.json/route.ts` — serves the Mini App manifest.
-- `app/layout.tsx` — emits `fc:miniapp` and legacy `fc:frame` meta tags so the page is shareable as a rich card in Farcaster.
+- `public/.well-known/farcaster.json` — serves the Mini App manifest (static).
+- `app/layout.tsx` — emits `fc:miniapp`, `fc:frame`, and `base:app_id` meta tags.
+- `app/api/webhook/route.ts` — receives Farcaster lifecycle events (frame_added, frame_removed, notifications).
 - `app/providers.tsx` — calls `sdk.actions.ready()` on mount to dismiss the Farcaster splash screen.
 - `lib/wagmi.ts` — registers the `farcasterMiniApp()` connector first; works inside a Farcaster client and silently falls through to MetaMask / Coinbase Wallet / WalletConnect on the open web.
 
@@ -180,9 +198,22 @@ Already wired:
    - `icon.png` (200×200)
    - `og.png` (1200×800) — used as embed and social card image
    - `splash.png` (200×200) — shown while the mini app loads
-4. **Sign your manifest**: open the [Farcaster manifest tool](https://farcaster.xyz/~/developers/mini-apps/manifest), enter your domain, sign with the FID that owns the app, and paste the resulting `accountAssociation` block (`header`, `payload`, `signature`) into `app/.well-known/farcaster.json/route.ts`. Redeploy.
+4. **Sign your manifest**: open the [Farcaster manifest tool](https://farcaster.xyz/~/developers/mini-apps/manifest), enter your domain, sign with the FID that owns the app, and paste the resulting `accountAssociation` block (`header`, `payload`, `signature`) into `public/.well-known/farcaster.json`. Redeploy.
 5. **Test it**: paste your URL into the [Farcaster preview tool](https://farcaster.xyz/~/developers/mini-apps/preview).
 6. **Cast it**: post the URL on Farcaster — it now renders as a rich Mini App card with an "Open Mindset" button.
+
+---
+
+## Base App Registration
+
+The app includes `base:app_id` meta tag for Base platform verification:
+
+1. Register your app at [base.dev](https://base.dev).
+2. The meta tag `<meta name="base:app_id" content="...">` is already in `app/layout.tsx`.
+3. After deploying to your domain, click "Register" in the Base dashboard to verify ownership.
+4. Your **Builder Code** (API key starting with `bdev_`) enables onchain analytics and potential rewards attribution.
+
+> **Note**: Base App only indexes **Base Mainnet** — testnet markets won't appear in the Base App until you deploy to mainnet.
 
 ---
 
@@ -192,12 +223,12 @@ Already wired:
 
 | Function | Who | Effect |
 | --- | --- | --- |
-| `createMarket(string question, string description, uint64 closeTime, address resolver, Category category)` | anyone | Register a new YES/NO market. Charges `creationFee` (5 USDC) — requires prior `approve()` |
-| `bet(uint256 marketId, bool yes, uint256 amount)` | anyone | Take a side. Requires prior `approve()` on the betting token |
-| `resolve(uint256 marketId, bool yesWon)` | resolver | After close time, set the outcome; 5% fee from losing pool goes to feeRecipient |
-| `claim(uint256 marketId)` | winner | Receive proportional payout from the pool |
-| `markInvalid(uint256 marketId)` | anyone | After close + 7 days unresolved, mark for refunds |
-| `refund(uint256 marketId)` | bettor | Get original stake back from an invalidated market |
+| `createMarket(question, description, closeTime, resolver, category)` | anyone | Register a new YES/NO market. Charges `creationFee` (5 USDC) — requires prior `approve()` |
+| `bet(marketId, yes, amount)` | anyone | Take a side. Requires prior `approve()` on the betting token |
+| `resolve(marketId, yesWon)` | resolver | After close time, set the outcome; 5% fee from losing pool goes to feeRecipient |
+| `claim(marketId)` | winner | Receive proportional payout from the pool |
+| `markInvalid(marketId)` | anyone | After close + 7 days unresolved, mark for refunds |
+| `refund(marketId)` | bettor | Get original stake back from an invalidated market |
 | `previewPayout(marketId, user, yesOutcome) view` | anyone | Preview payout for a hypothetical outcome |
 | `impliedYesBps(marketId) view` | anyone | Implied probability of YES (0–10000 bps) |
 
@@ -229,38 +260,58 @@ mindset/
 │   └── hardhat.config.ts
 └── frontend/
     ├── app/
-    │   ├── .well-known/farcaster.json/route.ts   # Farcaster manifest
+    │   ├── api/webhook/route.ts                   # Farcaster webhook endpoint
+    │   ├── create/page.tsx                        # /create (category tabs + Chainlink flow)
+    │   ├── dashboard/page.tsx                     # /dashboard (positions + claim/refund)
+    │   ├── leaderboard/page.tsx                   # /leaderboard (top creators by volume)
+    │   ├── markets/page.tsx                       # /markets (paginated, filterable, searchable)
+    │   ├── markets/[id]/page.tsx                  # /markets/123 (detail + bet + share)
+    │   ├── markets/[id]/opengraph-image.tsx       # per-market OG card (edge PNG)
     │   ├── icon.tsx                               # dynamic favicon (edge PNG)
     │   ├── opengraph-image.tsx                    # dynamic OG card (edge PNG)
-    │   ├── layout.tsx                             # fc:miniapp meta + fonts + providers
-    │   ├── page.tsx                               # /  (Hero + How It Works)
-    │   ├── markets/page.tsx                       # /markets
-    │   ├── markets/[id]/page.tsx                  # /markets/123
-    │   ├── markets/[id]/opengraph-image.tsx       # per-market OG card
-    │   ├── dashboard/page.tsx                     # /dashboard
-    │   ├── create/page.tsx                        # /create (category tabs + Chainlink flow)
-    │   ├── providers.tsx
+    │   ├── layout.tsx                             # metadata + providers + error boundary
+    │   ├── page.tsx                               # / (Hero + How It Works + live stats)
+    │   ├── providers.tsx                          # wagmi + react-query + Farcaster SDK
     │   └── globals.css
     ├── components/
-    │   ├── Navbar.tsx                             # incl. global Faucet button
-    │   ├── FaucetButton.tsx
-    │   ├── Footer.tsx
-    │   ├── ConnectButton.tsx
-    │   ├── ParticlesBg.tsx
-    │   ├── Toaster.tsx
-    │   ├── MarketCard.tsx                         # category badges + pool bar
-    │   ├── BetPanel.tsx
-    │   └── MarketActivity.tsx
+    │   ├── BetPanel.tsx                           # YES/NO bet form with approval flow
+    │   ├── ConnectButton.tsx                      # wallet connect/disconnect dropdown
+    │   ├── ErrorBoundary.tsx                      # global error catch with reload
+    │   ├── FaucetButton.tsx                       # mint testnet MUSDC
+    │   ├── Footer.tsx                             # site footer with links
+    │   ├── MarketActivity.tsx                     # pool activity (event logs, chunked fetch)
+    │   ├── MarketCard.tsx                         # market card with pool bar + badges
+    │   ├── Navbar.tsx                             # responsive nav + mobile menu
+    │   ├── NetworkWarning.tsx                     # wrong-chain banner with switch button
+    │   ├── ParticlesBg.tsx                        # animated hero background
+    │   └── Toaster.tsx                            # toast notification system
     ├── lib/
     │   ├── contract.ts            # ABIs, addresses, types, price feed catalog
     │   ├── wagmi.ts               # dual-mode connector setup (Farcaster + web)
-    │   ├── hooks.ts               # useAllMarkets, useMarket
+    │   ├── hooks.ts               # useAllMarkets, useMarket, useMarketCount
     │   ├── toast.ts               # tiny pub/sub toast bus
     │   └── utils.ts               # token/time formatters
     └── public/
-        ├── icon.svg               # static SVG fallback
-        └── splash.svg             # Farcaster splash screen fallback
+        ├── .well-known/farcaster.json   # Farcaster Mini App manifest
+        ├── icon.svg                     # static SVG fallback
+        ├── splash.svg                   # Farcaster splash screen
+        ├── mindset.jpg                  # OG/embed image
+        └── mindset-nobg.jpg             # transparent logo variant
 ```
+
+---
+
+## Pages & Routes
+
+| Route | Description |
+| --- | --- |
+| `/` | Hero landing with live stats (total pool, markets, positions) |
+| `/markets` | Browse all markets — search, filter by status/category, sort, paginated |
+| `/markets/[id]` | Market detail — bet panel, pool activity, claim/refund/resolve, share |
+| `/leaderboard` | Top market creators ranked by volume attracted |
+| `/dashboard` | Personal positions, balance, pending claims |
+| `/create` | Create market form — category tabs, Chainlink oracle config for Price |
+| `/api/webhook` | Farcaster Mini App webhook (POST) |
 
 ---
 
@@ -271,14 +322,18 @@ When you're confident:
 1. **Get a professional audit** of `PredictionMarket.sol`. Real money = real audit.
 2. Use **real USDC on Base** by setting `BETTING_TOKEN=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (Base mainnet USDC).
 3. Choose a meaningful `feeRecipient` (multisig or DAO treasury). It is immutable at deploy.
-4. Run `npm run deploy:base`.
-5. Update `frontend/.env.local`:
+4. Consider adding **owner-exempt creation fee** (skip fee for your own address) in the new contract.
+5. Run `npm run deploy:base`.
+6. Update `frontend/.env.local`:
    - `NEXT_PUBLIC_CONTRACT_ADDRESS` = mainnet address
    - `NEXT_PUBLIC_TOKEN_ADDRESS` = USDC mainnet
    - `NEXT_PUBLIC_PRICE_RESOLVER_ADDRESS` = mainnet resolver
    - `NEXT_PUBLIC_TOKEN_SYMBOL=USDC`
    - `NEXT_PUBLIC_CHAIN_ID=8453`
-6. Sign and ship the Farcaster manifest with your real domain.
+7. Sign and ship the Farcaster manifest with your real domain.
+8. Verify contracts on BaseScan.
+9. Consider using a paid RPC (Alchemy/Infura) instead of public endpoints for reliability.
+10. Set up a subgraph or indexer (The Graph, Envio, Goldsky) when market count exceeds ~100 for better query performance.
 
 ---
 
