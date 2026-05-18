@@ -133,7 +133,7 @@ export default function OG() {
           }}
         >
           <span style={{ fontSize: "14px", color: "#a5b4fc", fontWeight: 600 }}>
-            YES/NO · Parimutuel · Chainlink Oracle · 1% Fee
+            YES/NO · Parimutuel · Chainlink Oracle · 5% Fee
           </span>
         </div>
       </div>

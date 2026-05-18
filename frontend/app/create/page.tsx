@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { decodeEventLog } from "viem";
 import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { ConnectButton } from "@/components/ConnectButton";
 import {
@@ -87,35 +88,42 @@ export default function CreatePage() {
 
   useEffect(() => {
     if (createMined.isSuccess && category === 1 && !pendingRegister) {
-      // Price market created. Now register the Chainlink condition.
-      // The newly created market ID = whatever was nextMarketId at time of creation.
-      // Since this is sequential and we just got confirmed, we fetch it from the receipt logs.
-      // Simpler: the return value is marketId. We can parse from logs.
-      // Actually the simplest approach: read nextMarketId and subtract 1.
+      // Price market created. Continue to register the Chainlink condition.
       setPendingRegister(true);
     }
   }, [createMined.isSuccess]); // eslint-disable-line
 
   useEffect(() => {
     if (pendingRegister && createMined.isSuccess) {
-      // We need the market ID. Parse from MarketCreated event in the receipt.
       const receipt = createMined.data;
       if (!receipt) return;
 
-      // Find MarketCreated event — first indexed topic after event sig is marketId
-      const marketCreatedTopic = "0x"; // We'll just use nextMarketId - 1 approach instead
-      // Simpler: read the first log's first indexed topic (marketId)
-      const log = receipt.logs.find(
-        (l) => l.address.toLowerCase() === CONTRACT_ADDRESS.toLowerCase() && l.topics.length >= 2
-      );
-      if (!log) {
-        pushToast("Could not find market ID from receipt", "error");
+      // Robustly decode the MarketCreated event from receipt logs.
+      let marketId: bigint | null = null;
+      for (const log of receipt.logs) {
+        if (log.address.toLowerCase() !== CONTRACT_ADDRESS.toLowerCase()) continue;
+        try {
+          const decoded = decodeEventLog({
+            abi: predictionMarketAbi,
+            data: log.data,
+            topics: log.topics,
+          });
+          if (decoded.eventName === "MarketCreated") {
+            marketId = (decoded.args as { marketId: bigint }).marketId;
+            break;
+          }
+        } catch {
+          // Not a known event from this ABI — skip
+        }
+      }
+
+      if (marketId === null) {
+        pushToast("Could not parse market ID from receipt", "error");
         setPendingRegister(false);
         router.push("/markets");
         return;
       }
 
-      const marketId = BigInt(log.topics[1]!);
       const feed = getFeedAddress(PRICE_FEEDS[feedIndex]);
       if (!feed) {
         pushToast("Feed not available on this network", "error");

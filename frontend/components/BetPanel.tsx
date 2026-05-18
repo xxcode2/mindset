@@ -28,8 +28,6 @@ export function BetPanel({
 
   const closed = Date.now() / 1000 >= Number(market.closeTime) || market.outcome !== 0;
   const amount = parseToken(input);
-  const yesAmount = side === "yes" ? amount : 0n;
-  const noAmount = side === "no" ? amount : 0n;
 
   // Read user's token balance + allowance.
   const { data: balance } = useReadContract({
@@ -49,13 +47,12 @@ export function BetPanel({
   const allowance = (allowanceData as bigint | undefined) ?? 0n;
   const needsApproval = amount > 0n && allowance < amount;
 
+  // TX state
   const approveTx = useWriteContract();
   const betTx = useWriteContract();
-  const faucetTx = useWriteContract();
 
   const approveMined = useWaitForTransactionReceipt({ hash: approveTx.data });
   const betMined = useWaitForTransactionReceipt({ hash: betTx.data });
-  const faucetMined = useWaitForTransactionReceipt({ hash: faucetTx.data });
 
   useEffect(() => {
     if (approveMined.isSuccess) {
@@ -73,13 +70,6 @@ export function BetPanel({
       onPlaced();
     }
   }, [betMined.isSuccess]); // eslint-disable-line
-
-  useEffect(() => {
-    if (faucetMined.isSuccess) {
-      pushToast("10,000 test USDC minted", "success");
-      faucetTx.reset();
-    }
-  }, [faucetMined.isSuccess]); // eslint-disable-line
 
   const submit = () => {
     if (!isConnected) return pushToast("Connect your wallet first", "error");
@@ -101,15 +91,6 @@ export function BetPanel({
       abi: predictionMarketAbi,
       functionName: "bet",
       args: [marketId, side === "yes", amount],
-    });
-  };
-
-  const callFaucet = () => {
-    faucetTx.writeContract({
-      address: TOKEN_ADDRESS,
-      abi: erc20Abi,
-      functionName: "faucet",
-      args: [],
     });
   };
 
@@ -221,7 +202,7 @@ export function BetPanel({
             Funds held by smart contract
           </div>
           <div className="mt-1 text-xs" style={{ color: "rgba(148,163,184,0.55)" }}>
-            Non-custodial. Stake locked until resolution. 1% fee applied to losing pool only.
+            Non-custodial. Stake locked until resolution. 5% fee applied to losing pool only.
           </div>
         </div>
       </div>
@@ -234,21 +215,13 @@ export function BetPanel({
         {buttonLabel}
       </button>
 
-      <div className="mt-3 flex items-center justify-between text-xs">
-        <p style={{ color: "rgba(148,163,184,0.35)" }}>Gas fees apply · Non-reversible</p>
-        <button
-          onClick={callFaucet}
-          className="rounded-lg px-2 py-1 text-xs font-medium"
-          style={{ background: "rgba(99,102,241,0.1)", color: "#818cf8" }}
-          title="Mints 10k test USDC if the token is the MockUSDC test contract"
-        >
-          Faucet
-        </button>
-      </div>
+      <p className="mt-3 text-xs" style={{ color: "rgba(148,163,184,0.35)" }}>
+        Gas fees apply · Non-reversible
+      </p>
 
-      {(approveTx.error || betTx.error || faucetTx.error) && (
+      {(approveTx.error || betTx.error) && (
         <p className="mt-3 break-words text-xs text-red-400">
-          {(approveTx.error ?? betTx.error ?? faucetTx.error)?.message}
+          {(approveTx.error ?? betTx.error)?.message}
         </p>
       )}
     </div>
