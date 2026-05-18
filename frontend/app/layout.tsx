@@ -49,6 +49,7 @@ export const metadata: Metadata = {
     images: [{ url: "/mindset.jpg" }],
   },
   other: {
+    "base:app_id": "6a0b1abf7abfff0aca7b1763",
     "fc:miniapp": JSON.stringify(miniAppEmbed),
     "fc:frame": JSON.stringify(miniAppEmbed),
   },
