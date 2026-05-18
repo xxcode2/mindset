@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { ConnectButton } from "./ConnectButton";
+import { FaucetButton } from "./FaucetButton";
 import { classNames } from "@/lib/utils";
 
 const NAV = [
@@ -72,6 +73,9 @@ export function Navbar() {
 
           <div className="flex items-center gap-3">
             <div className="hidden sm:block">
+              <FaucetButton />
+            </div>
+            <div className="hidden sm:block">
               <ConnectButton />
             </div>
             <button
@@ -119,6 +123,9 @@ export function Navbar() {
               ))}
               <div className="mt-2 sm:hidden">
                 <ConnectButton compact />
+              </div>
+              <div className="mt-2 sm:hidden">
+                <FaucetButton compact />
               </div>
             </div>
           </div>
