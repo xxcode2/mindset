@@ -105,9 +105,9 @@ export default function Home() {
           </div>
 
           <div className="animate-fade-up delay-6 mt-16 grid grid-cols-3 gap-8 sm:gap-16">
-            <Stat value={isLoading ? "—" : fmtCompactUsd(totalVolume)} label="TOTAL POOL" />
-            <Stat value={isLoading ? "—" : marketsCount.toLocaleString()} label="MARKETS" />
-            <Stat value={isLoading ? "—" : totalBettors.toLocaleString()} label="POSITIONS" />
+            <Stat value={isLoading ? undefined : fmtCompactUsd(totalVolume)} label="TOTAL POOL" />
+            <Stat value={isLoading ? undefined : marketsCount.toLocaleString()} label="MARKETS" />
+            <Stat value={isLoading ? undefined : totalBettors.toLocaleString()} label="POSITIONS" />
           </div>
         </div>
       </section>
@@ -171,12 +171,16 @@ export default function Home() {
   );
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
+function Stat({ value, label }: { value: string | undefined; label: string }) {
   return (
     <div className="text-center">
-      <div className="text-2xl font-bold sm:text-3xl" style={{ color: "#e2e8f0" }}>
-        {value}
-      </div>
+      {value === undefined ? (
+        <div className="mx-auto h-8 w-20 animate-pulse rounded-lg bg-white/10 sm:h-9 sm:w-24" />
+      ) : (
+        <div className="text-2xl font-bold sm:text-3xl" style={{ color: "#e2e8f0" }}>
+          {value}
+        </div>
+      )}
       <div className="mt-1 text-xs tracking-wider" style={{ color: "rgba(148,163,184,0.5)" }}>
         {label}
       </div>

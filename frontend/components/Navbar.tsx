@@ -10,6 +10,7 @@ import { classNames } from "@/lib/utils";
 const NAV = [
   { href: "/", label: "Home" },
   { href: "/markets", label: "Markets" },
+  { href: "/leaderboard", label: "Leaderboard" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/create", label: "Create" },
 ];
@@ -78,6 +79,10 @@ export function Navbar() {
             <div className="hidden sm:block">
               <ConnectButton />
             </div>
+            {/* Mobile: show connect button always */}
+            <div className="block sm:hidden">
+              <ConnectButton compact />
+            </div>
             <button
               className="rounded-lg p-2 md:hidden"
               style={{ color: "#94a3b8" }}
@@ -121,10 +126,8 @@ export function Navbar() {
                   {n.label}
                 </Link>
               ))}
-              <div className="mt-2 sm:hidden">
-                <ConnectButton compact />
-              </div>
-              <div className="mt-2 sm:hidden">
+              {/* Faucet prominent on mobile */}
+              <div className="mt-3 px-3">
                 <FaucetButton compact />
               </div>
             </div>
