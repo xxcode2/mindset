@@ -35,25 +35,25 @@ export function Footer() {
           <FooterCol
             title="PROTOCOL"
             links={[
-              { label: "About", href: "#" },
-              { label: "Documentation", href: "#" },
-              { label: "Contracts", href: "#" },
+              { label: "About", href: "https://github.com/xxcode2/mindset#readme" },
+              { label: "Documentation", href: "https://github.com/xxcode2/mindset#contract-surface" },
+              { label: "Contracts", href: CHAIN_ID === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org" },
             ]}
           />
           <FooterCol
             title="RESOURCES"
             links={[
-              { label: "BaseScan", href: "https://sepolia.basescan.org" },
+              { label: "BaseScan", href: CHAIN_ID === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org" },
               { label: "Faucet", href: "https://www.alchemy.com/faucets/base-sepolia" },
-              { label: "Bug Bounty", href: "#" },
+              { label: "Bug Bounty", href: "https://github.com/xxcode2/mindset/issues" },
             ]}
           />
           <FooterCol
             title="COMMUNITY"
             links={[
-              { label: "Farcaster", href: "https://farcaster.xyz" },
+              { label: "Farcaster", href: "https://warpcast.com" },
               { label: "GitHub", href: "https://github.com/xxcode2/mindset" },
-              { label: "X / Twitter", href: "#" },
+              { label: "X / Twitter", href: "https://x.com" },
             ]}
           />
         </div>

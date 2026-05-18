@@ -7,6 +7,7 @@ import { sdk } from "@farcaster/miniapp-sdk";
 import { useAccount, useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { BetPanel } from "@/components/BetPanel";
 import { MarketActivity } from "@/components/MarketActivity";
+import { PriceDisplay } from "@/components/PriceDisplay";
 import {
   CONTRACT_ADDRESS,
   PRICE_RESOLVER_ADDRESS,
@@ -212,6 +213,11 @@ export default function MarketDetailPage() {
                 className="col-span-2 sm:col-span-1"
               />
             </div>
+
+            {/* Live oracle price for Price-category markets */}
+            {market.category === 1 && market.resolver.toLowerCase() === PRICE_RESOLVER_ADDRESS.toLowerCase() && PRICE_RESOLVER_ADDRESS !== "0x0000000000000000000000000000000000000000" && (
+              <PriceDisplay marketId={marketId} />
+            )}
 
             <div className="mb-2">
               <div className="mb-2 flex justify-between text-xs font-medium">
