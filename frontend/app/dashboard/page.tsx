@@ -19,9 +19,18 @@ import {
   statusFromMarket,
   type Market,
 } from "@/lib/contract";
-import { fmtAddr, fmtCompactUsd, fmtToken } from "@/lib/utils";
+import { useAllMarkets } from "@/lib/hooks";
+import { fmtAddr, fmtCompactUsd, fmtCountdown, fmtToken } from "@/lib/utils";
 import { pushToast } from "@/lib/toast";
 import { useEffect } from "react";
+
+const BADGE_CLASS: Record<string, string> = {
+  open: "badge-open",
+  closed: "badge-closed",
+  pending: "badge-pending",
+  resolved: "badge-resolved",
+  invalid: "badge-resolved",
+};
 
 export default function DashboardPage() {
   const { address, isConnected } = useAccount();
@@ -33,6 +42,23 @@ export default function DashboardPage() {
     args: address ? [address] : undefined,
     query: { enabled: !!address },
   });
+
+  // Owner role + review-window length come from contract config; used to render
+  // the owner-only "Markets pending your review" section.
+  const ownerRead = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: predictionMarketAbi,
+    functionName: "owner",
+  });
+  const reviewPeriodRead = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: predictionMarketAbi,
+    functionName: "REVIEW_PERIOD",
+  });
+  const ownerAddr = ownerRead.data as `0x${string}` | undefined;
+  const reviewPeriodSec = Number(reviewPeriodRead.data ?? 259200n);
+  const isOwner =
+    !!address && !!ownerAddr && address.toLowerCase() === ownerAddr.toLowerCase();
 
   const { data: idsRaw, refetch: refetchIds } = useReadContract({
     address: CONTRACT_ADDRESS,
@@ -102,7 +128,7 @@ export default function DashboardPage() {
       const stake = p.yesBet + p.noBet;
       totalStaked += stake;
       const s = statusFromMarket(p.market);
-      if (s === "open" || s === "closed") active++;
+      if (s === "open" || s === "closed" || s === "pending") active++;
       const isWinner =
         (p.market.outcome === 1 && p.yesBet > 0n) ||
         (p.market.outcome === 2 && p.noBet > 0n);
@@ -116,10 +142,33 @@ export default function DashboardPage() {
     return { active, claimable, totalStaked, totalSettled };
   }, [positions]);
 
+  // Pull every market for the owner-review queue. Skipped for non-owners so we
+  // don't waste RPC calls; the hook still safely no-ops when count is 0.
+  const allMarkets = useAllMarkets(isOwner ? undefined : 0);
+  const pendingReview = useMemo(() => {
+    return allMarkets.markets
+      .filter(({ market: m }) => m && m.outcome === 0 && (m as Market).proposedOutcome !== 0)
+      .map(({ id, market: m }) => {
+        const proposedAt = Number((m as Market).proposedAt);
+        const reviewDeadline = proposedAt + reviewPeriodSec;
+        const nowSec = Math.floor(Date.now() / 1000);
+        return {
+          id,
+          market: m as Market,
+          reviewDeadline,
+          inReview: nowSec < reviewDeadline,
+        };
+      })
+      // Soonest deadline first
+      .sort((a, b) => a.reviewDeadline - b.reviewDeadline);
+  }, [allMarkets.markets, reviewPeriodSec]);
+
   const claimTx = useWriteContract();
   const refundTx = useWriteContract();
+  const reviewTx = useWriteContract();
   const claimMined = useWaitForTransactionReceipt({ hash: claimTx.data });
   const refundMined = useWaitForTransactionReceipt({ hash: refundTx.data });
+  const reviewMined = useWaitForTransactionReceipt({ hash: reviewTx.data });
 
   useEffect(() => {
     if (claimMined.isSuccess) {
@@ -137,6 +186,13 @@ export default function DashboardPage() {
       batch.refetch();
     }
   }, [refundMined.isSuccess]); // eslint-disable-line
+  useEffect(() => {
+    if (reviewMined.isSuccess) {
+      pushToast("Review action confirmed", "success");
+      reviewTx.reset();
+      allMarkets.refetch();
+    }
+  }, [reviewMined.isSuccess]); // eslint-disable-line
 
   if (!isConnected) {
     return (
@@ -166,6 +222,182 @@ export default function DashboardPage() {
           Your positions and portfolio overview
         </p>
       </div>
+
+      {/* Owner-only: queue of markets where a resolver has proposed an outcome.
+          The owner can approve / reject inline, or open the market for full context. */}
+      {isOwner && pendingReview.length > 0 && (
+        <div
+          className="glass-card mb-8 overflow-hidden"
+          style={{ border: "1px solid rgba(244,114,182,0.3)" }}
+        >
+          <div className="flex items-center justify-between p-6 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span
+                  className="badge-pending rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                >
+                  OWNER
+                </span>
+                <h3 className="text-base font-semibold" style={{ color: "#e2e8f0" }}>
+                  Markets pending your review
+                </h3>
+              </div>
+              <p className="mt-1 text-xs" style={{ color: "rgba(148,163,184,0.6)" }}>
+                Resolvers have proposed outcomes. Approve to finalize and refund their bond,
+                or reject to invalidate the market and slash the bond.
+              </p>
+            </div>
+            <span
+              className="rounded-full px-3 py-1 text-sm font-bold"
+              style={{
+                background: "rgba(244,114,182,0.15)",
+                color: "#f472b6",
+                border: "1px solid rgba(244,114,182,0.3)",
+              }}
+            >
+              {pendingReview.length}
+            </span>
+          </div>
+
+          <div className="divide-y" style={{ borderColor: "rgba(99,102,241,0.06)" }}>
+            {pendingReview.map(({ id, market, reviewDeadline, inReview }) => {
+              const proposedLabel =
+                market.proposedOutcome === 1 ? "YES" : market.proposedOutcome === 2 ? "NO" : "—";
+              const proposedColor = market.proposedOutcome === 1 ? "#34d399" : "#f87171";
+              const proposedBg =
+                market.proposedOutcome === 1 ? "rgba(52,211,153,0.15)" : "rgba(248,113,113,0.15)";
+              const totalPool = market.yesPool + market.noPool;
+              return (
+                <div
+                  key={id.toString()}
+                  className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center"
+                  style={{ borderTop: "1px solid rgba(99,102,241,0.06)" }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      href={`/markets/${id.toString()}`}
+                      className="text-sm font-medium hover:underline"
+                      style={{ color: "#e2e8f0" }}
+                    >
+                      {market.question}
+                    </Link>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                      <span style={{ color: "rgba(148,163,184,0.6)" }}>
+                        Resolver picked
+                      </span>
+                      <span
+                        className="rounded-md px-2 py-0.5 font-semibold"
+                        style={{ background: proposedBg, color: proposedColor }}
+                      >
+                        {proposedLabel}
+                      </span>
+                      <span style={{ color: "rgba(148,163,184,0.5)" }}>
+                        Pool: <span className="font-mono" style={{ color: "rgba(148,163,184,0.7)" }}>{fmtCompactUsd(totalPool)}</span>
+                      </span>
+                      <span style={{ color: "rgba(148,163,184,0.5)" }}>
+                        Bond: <span className="font-mono" style={{ color: "rgba(148,163,184,0.7)" }}>{fmtToken(market.resolverBondLocked)}</span>
+                      </span>
+                      <span style={{ color: "rgba(148,163,184,0.5)" }}>
+                        Resolver: <span className="font-mono" style={{ color: "rgba(148,163,184,0.7)" }}>{fmtAddr(market.resolver)}</span>
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs">
+                      {inReview ? (
+                        <span style={{ color: "#f472b6" }}>
+                          Review window: <span className="font-mono">{fmtCountdown(reviewDeadline)}</span> remaining
+                        </span>
+                      ) : (
+                        <span style={{ color: "rgba(244,114,182,0.7)" }}>
+                          Review window expired — anyone can now finalize
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-shrink-0 flex-wrap gap-2">
+                    {inReview ? (
+                      <>
+                        <button
+                          className="btn-primary rounded-lg px-3 py-1.5 text-xs font-semibold"
+                          style={{ background: "linear-gradient(135deg,#10b981,#34d399)" }}
+                          disabled={reviewTx.isPending || reviewMined.isLoading}
+                          onClick={() =>
+                            reviewTx.writeContract({
+                              address: CONTRACT_ADDRESS,
+                              abi: predictionMarketAbi,
+                              functionName: "approveOutcome",
+                              args: [id],
+                            })
+                          }
+                        >
+                          Approve {proposedLabel}
+                        </button>
+                        <button
+                          className="btn-primary rounded-lg px-3 py-1.5 text-xs font-semibold"
+                          style={{ background: "linear-gradient(135deg,#dc2626,#f87171)" }}
+                          disabled={reviewTx.isPending || reviewMined.isLoading}
+                          onClick={() =>
+                            reviewTx.writeContract({
+                              address: CONTRACT_ADDRESS,
+                              abi: predictionMarketAbi,
+                              functionName: "rejectOutcome",
+                              args: [id],
+                            })
+                          }
+                        >
+                          Reject
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          className="btn-primary rounded-lg px-3 py-1.5 text-xs font-semibold"
+                          style={{ background: "linear-gradient(135deg,#10b981,#34d399)" }}
+                          disabled={reviewTx.isPending || reviewMined.isLoading}
+                          onClick={() =>
+                            reviewTx.writeContract({
+                              address: CONTRACT_ADDRESS,
+                              abi: predictionMarketAbi,
+                              functionName: "approveOutcome",
+                              args: [id],
+                            })
+                          }
+                        >
+                          Approve {proposedLabel}
+                        </button>
+                        <button
+                          className="btn-secondary rounded-lg px-3 py-1.5 text-xs font-semibold"
+                          disabled={reviewTx.isPending || reviewMined.isLoading}
+                          onClick={() =>
+                            reviewTx.writeContract({
+                              address: CONTRACT_ADDRESS,
+                              abi: predictionMarketAbi,
+                              functionName: "finalizeIfTimeout",
+                              args: [id],
+                            })
+                          }
+                        >
+                          Finalize
+                        </button>
+                      </>
+                    )}
+                    <Link
+                      href={`/markets/${id.toString()}`}
+                      className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+                      style={{
+                        border: "1px solid rgba(148,163,184,0.2)",
+                        color: "rgba(148,163,184,0.7)",
+                      }}
+                    >
+                      View
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Wallet card */}
       <div className="glass-card mb-8 p-6">
@@ -307,12 +539,7 @@ export default function DashboardPage() {
                     );
                   }
 
-                  const badgeClass =
-                    status === "open"
-                      ? "badge-open"
-                      : status === "resolved"
-                      ? "badge-resolved"
-                      : "badge-closed";
+                  const badgeClass = BADGE_CLASS[status] ?? "badge-closed";
 
                   return (
                     <tr key={id.toString()} style={{ borderBottom: "1px solid rgba(99,102,241,0.06)" }}>
