@@ -33,13 +33,43 @@ export const predictionMarketAbi = [
       { name: "_bettingToken", type: "address" },
       { name: "_feeRecipient", type: "address" },
       { name: "_creationFee", type: "uint256" },
+      { name: "_owner", type: "address" },
+      { name: "_resolverBond", type: "uint256" },
     ],
     stateMutability: "nonpayable",
   },
   { type: "function", name: "bettingToken", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
   { type: "function", name: "feeRecipient", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
   { type: "function", name: "creationFee", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "resolverBond", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+  {
+    type: "function",
+    name: "trustedResolver",
+    inputs: [{ name: "resolver", type: "address" }],
+    outputs: [{ type: "bool" }],
+    stateMutability: "view",
+  },
+  { type: "function", name: "REVIEW_PERIOD", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "RESOLUTION_GRACE_PERIOD", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
   { type: "function", name: "nextMarketId", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  {
+    type: "function",
+    name: "transferOwnership",
+    inputs: [{ name: "newOwner", type: "address" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "setTrustedResolver",
+    inputs: [
+      { name: "resolver_", type: "address" },
+      { name: "trusted", type: "bool" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
   {
     type: "function",
     name: "createMarket",
@@ -74,6 +104,27 @@ export const predictionMarketAbi = [
     outputs: [],
     stateMutability: "nonpayable",
   },
+  {
+    type: "function",
+    name: "approveOutcome",
+    inputs: [{ name: "marketId", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "rejectOutcome",
+    inputs: [{ name: "marketId", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "finalizeIfTimeout",
+    inputs: [{ name: "marketId", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
   { type: "function", name: "markInvalid", inputs: [{ name: "marketId", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
   { type: "function", name: "claim", inputs: [{ name: "marketId", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
   { type: "function", name: "refund", inputs: [{ name: "marketId", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
@@ -97,6 +148,9 @@ export const predictionMarketAbi = [
           { name: "noBettors", type: "uint32" },
           { name: "outcome", type: "uint8" },
           { name: "category", type: "uint8" },
+          { name: "proposedOutcome", type: "uint8" },
+          { name: "proposedAt", type: "uint64" },
+          { name: "resolverBondLocked", type: "uint128" },
         ],
       },
     ],
@@ -185,6 +239,53 @@ export const predictionMarketAbi = [
     ],
     anonymous: false,
   },
+  {
+    type: "event",
+    name: "MarketResolved",
+    inputs: [
+      { name: "marketId", type: "uint256", indexed: true },
+      { name: "outcome", type: "uint8", indexed: false },
+      { name: "feeTaken", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "MarketInvalidated",
+    inputs: [{ name: "marketId", type: "uint256", indexed: true }],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OutcomeProposed",
+    inputs: [
+      { name: "marketId", type: "uint256", indexed: true },
+      { name: "resolver", type: "address", indexed: true },
+      { name: "proposedOutcome", type: "uint8", indexed: false },
+      { name: "reviewDeadline", type: "uint64", indexed: false },
+      { name: "bondLocked", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OutcomeApproved",
+    inputs: [
+      { name: "marketId", type: "uint256", indexed: true },
+      { name: "approver", type: "address", indexed: true },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OutcomeRejected",
+    inputs: [
+      { name: "marketId", type: "uint256", indexed: true },
+      { name: "rejecter", type: "address", indexed: true },
+      { name: "bondSlashed", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
 ] as const;
 
 // ───────────────────── ERC20 ABI (minimal, with faucet) ────────────────────
@@ -239,15 +340,19 @@ export type Market = {
   noBettors: number;
   outcome: Outcome;
   category: CategoryIndex;
+  proposedOutcome: Outcome;
+  proposedAt: bigint;
+  resolverBondLocked: bigint;
 };
 
 export const OUTCOME_LABEL = ["open", "resolved", "resolved", "invalid"] as const;
 
-/** Maps a market struct to the visible status used by filters: open / closed / resolved / invalid. */
-export function statusFromMarket(m: Market): "open" | "closed" | "resolved" | "invalid" {
+/** Maps a market struct to the visible status used by filters: open / closed / pending / resolved / invalid. */
+export function statusFromMarket(m: Market): "open" | "closed" | "pending" | "resolved" | "invalid" {
   if (m.outcome === 1 || m.outcome === 2) return "resolved";
   if (m.outcome === 3) return "invalid";
-  // outcome === 0 (Unresolved) — open if before closeTime, else closed
+  // outcome === 0 (Unresolved): may still be in proposal-review state
+  if (m.proposedOutcome !== 0) return "pending";
   return Date.now() / 1000 < Number(m.closeTime) ? "open" : "closed";
 }
 
