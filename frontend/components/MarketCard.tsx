@@ -8,6 +8,7 @@ import { fmtCompactUsd, fmtCountdown } from "@/lib/utils";
 const STATUS_BADGE: Record<string, string> = {
   open: "badge-open",
   closed: "badge-closed",
+  pending: "badge-pending",
   resolved: "badge-resolved",
   invalid: "badge-resolved",
 };
@@ -46,6 +47,8 @@ export function MarketCard({ id, market }: { id: bigint; market: Market }) {
       ? "NO won"
       : status === "invalid"
       ? "invalid"
+      : status === "pending"
+      ? "review"
       : status;
 
   const catIndex = market.category ?? 0;
@@ -86,7 +89,13 @@ export function MarketCard({ id, market }: { id: bigint; market: Market }) {
           <circle cx="12" cy="12" r="10" />
           <path d="M12 6v6l4 2" />
         </svg>
-        {status === "open" ? fmtCountdown(closeSec) : status === "closed" ? "Awaiting resolution" : "Closed"}
+        {status === "open"
+          ? fmtCountdown(closeSec)
+          : status === "closed"
+          ? "Awaiting resolution"
+          : status === "pending"
+          ? "Awaiting owner review"
+          : "Closed"}
       </div>
 
       <div className="mb-4">
