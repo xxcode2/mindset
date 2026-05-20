@@ -8,23 +8,36 @@ const ONE = 1_000_000n; // 1 USDC (6 decimals)
 const CAT_CUSTOM = 0;
 const CAT_PRICE = 1;
 
+const CREATION_FEE = 5_000_000n; // 5 USDC
+const RESOLVER_BOND = 10_000_000n; // 10 USDC
+
 describe("PredictionMarket", () => {
   async function deploy() {
-    const [deployer, alice, bob, carol, resolver, fee] = await ethers.getSigners();
+    const [deployer, alice, bob, carol, resolver, fee, owner] = await ethers.getSigners();
 
     const Mock = await ethers.getContractFactory("MockUSDC");
     const usdc = await Mock.deploy();
     await usdc.waitForDeployment();
 
     const Pm = await ethers.getContractFactory("PredictionMarket");
-    const pm = await Pm.deploy(await usdc.getAddress(), fee.address, 5_000_000n); // 5 USDC creation fee
+    const pm = await Pm.deploy(
+      await usdc.getAddress(),
+      fee.address,
+      CREATION_FEE,
+      owner.address,
+      RESOLVER_BOND
+    );
     await pm.waitForDeployment();
+
+    // Mark the test EOA resolver as trusted so existing single-phase resolution tests
+    // continue to exercise the "instant finalize" path. The two-phase flow has its own suite below.
+    await pm.connect(owner).setTrustedResolver(resolver.address, true);
 
     for (const s of [deployer, alice, bob, carol]) {
       await usdc.connect(s).faucet();
       await usdc.connect(s).approve(await pm.getAddress(), ethers.MaxUint256);
     }
-    return { pm, usdc, deployer, alice, bob, carol, resolver, fee };
+    return { pm, usdc, deployer, alice, bob, carol, resolver, fee, owner };
   }
 
   async function newMarket(pm: any, resolver: any, daysAhead = 1) {
@@ -179,25 +192,293 @@ describe("PredictionMarket", () => {
   });
 });
 
-describe("ChainlinkPriceResolver", () => {
-  // Comparator enum: GreaterThan=0, GreaterOrEqual=1, LessThan=2, LessOrEqual=3
-  const GT = 0;
-  const LT = 2;
-
+describe("PredictionMarket two-phase resolution", () => {
   async function deploy() {
-    const [deployer, alice, bob, fee] = await ethers.getSigners();
+    const [deployer, alice, bob, humanResolver, fee, owner, attacker] = await ethers.getSigners();
 
     const Mock = await ethers.getContractFactory("MockUSDC");
     const usdc = await Mock.deploy();
     await usdc.waitForDeployment();
 
     const Pm = await ethers.getContractFactory("PredictionMarket");
-    const pm = await Pm.deploy(await usdc.getAddress(), fee.address, 5_000_000n); // 5 USDC creation fee
+    const pm = await Pm.deploy(
+      await usdc.getAddress(),
+      fee.address,
+      CREATION_FEE,
+      owner.address,
+      RESOLVER_BOND
+    );
+    await pm.waitForDeployment();
+
+    // humanResolver is intentionally NOT trusted — must go through propose/approve flow.
+    for (const s of [deployer, alice, bob, humanResolver, attacker]) {
+      await usdc.connect(s).faucet();
+      await usdc.connect(s).approve(await pm.getAddress(), ethers.MaxUint256);
+    }
+    return { pm, usdc, deployer, alice, bob, humanResolver, fee, owner, attacker };
+  }
+
+  async function newMarket(pm: any, resolver: any) {
+    const closeTime = (await time.latest()) + 24 * 3600;
+    await pm.createMarket("Q?", "D", closeTime, resolver.address, CAT_CUSTOM);
+    return { marketId: 0n, closeTime };
+  }
+
+  async function setupBets(pm: any, alice: any, bob: any) {
+    await pm.connect(alice).bet(0, true, 100n * ONE);
+    await pm.connect(bob).bet(0, false, 100n * ONE);
+    await time.increase(2 * 24 * 3600);
+  }
+
+  it("resolve() by non-trusted resolver only proposes; market stays unresolved and bond is locked", async () => {
+    const { pm, usdc, alice, bob, humanResolver } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+
+    const resolverBalBefore = await usdc.balanceOf(humanResolver.address);
+    const pmBalBefore = await usdc.balanceOf(await pm.getAddress());
+
+    await expect(pm.connect(humanResolver).resolve(0, true))
+      .to.emit(pm, "OutcomeProposed")
+      .and.to.not.emit(pm, "MarketResolved");
+
+    expect(resolverBalBefore - (await usdc.balanceOf(humanResolver.address))).to.equal(RESOLVER_BOND);
+    expect((await usdc.balanceOf(await pm.getAddress())) - pmBalBefore).to.equal(RESOLVER_BOND);
+
+    const m = await pm.getMarket(0);
+    expect(m.outcome).to.equal(0); // still Unresolved
+    expect(m.proposedOutcome).to.equal(1); // Yes
+    expect(m.resolverBondLocked).to.equal(RESOLVER_BOND);
+  });
+
+  it("claims are blocked while a proposal is pending", async () => {
+    const { pm, alice, humanResolver } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, alice); // alice both sides for simplicity (won't claim anyway)
+    await pm.connect(humanResolver).resolve(0, true);
+    await expect(pm.connect(alice).claim(0)).to.be.revertedWithCustomError(pm, "MarketNotClosed");
+  });
+
+  it("resolver cannot propose twice for the same market", async () => {
+    const { pm, alice, bob, humanResolver } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+    await pm.connect(humanResolver).resolve(0, true);
+    await expect(pm.connect(humanResolver).resolve(0, false)).to.be.revertedWithCustomError(pm, "AlreadyProposed");
+  });
+
+  it("approveOutcome finalizes the market and refunds the bond", async () => {
+    const { pm, usdc, alice, bob, humanResolver, owner, fee } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+
+    await pm.connect(humanResolver).resolve(0, true);
+
+    const resolverBefore = await usdc.balanceOf(humanResolver.address);
+    const feeBefore = await usdc.balanceOf(fee.address);
+
+    await expect(pm.connect(owner).approveOutcome(0))
+      .to.emit(pm, "OutcomeApproved")
+      .and.to.emit(pm, "MarketResolved");
+
+    // Bond returned, 5% fee taken from losing pool (5 USDC of 100 USDC NO pool)
+    expect((await usdc.balanceOf(humanResolver.address)) - resolverBefore).to.equal(RESOLVER_BOND);
+    expect((await usdc.balanceOf(fee.address)) - feeBefore).to.equal(5n * ONE);
+
+    const m = await pm.getMarket(0);
+    expect(m.outcome).to.equal(1); // Yes
+    expect(m.proposedOutcome).to.equal(0);
+    expect(m.resolverBondLocked).to.equal(0);
+
+    // Winner can claim
+    const aliceBefore = await usdc.balanceOf(alice.address);
+    await pm.connect(alice).claim(0);
+    // distributable = 100 + 100 - 5 = 195; alice owns full yesPool → gets 195 USDC
+    expect((await usdc.balanceOf(alice.address)) - aliceBefore).to.equal(195n * ONE);
+  });
+
+  it("rejectOutcome slashes bond, invalidates market, and lets bettors refund", async () => {
+    const { pm, usdc, alice, bob, humanResolver, owner, fee } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+
+    await pm.connect(humanResolver).resolve(0, false); // proposes NO (let's say cheating)
+
+    const feeBefore = await usdc.balanceOf(fee.address);
+    const resolverBefore = await usdc.balanceOf(humanResolver.address);
+
+    await expect(pm.connect(owner).rejectOutcome(0))
+      .to.emit(pm, "OutcomeRejected")
+      .and.to.emit(pm, "MarketInvalidated");
+
+    // Bond slashed to feeRecipient, resolver does NOT get bond back.
+    expect((await usdc.balanceOf(fee.address)) - feeBefore).to.equal(RESOLVER_BOND);
+    expect(await usdc.balanceOf(humanResolver.address)).to.equal(resolverBefore);
+
+    const m = await pm.getMarket(0);
+    expect(m.outcome).to.equal(3); // Invalid
+    expect(m.resolverBondLocked).to.equal(0);
+
+    // Both bettors can refund their full stake
+    const aBefore = await usdc.balanceOf(alice.address);
+    await pm.connect(alice).refund(0);
+    expect((await usdc.balanceOf(alice.address)) - aBefore).to.equal(100n * ONE);
+
+    const bBefore = await usdc.balanceOf(bob.address);
+    await pm.connect(bob).refund(0);
+    expect((await usdc.balanceOf(bob.address)) - bBefore).to.equal(100n * ONE);
+  });
+
+  it("only owner can approve or reject; non-owner reverts", async () => {
+    const { pm, alice, bob, humanResolver, attacker } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+    await pm.connect(humanResolver).resolve(0, true);
+
+    await expect(pm.connect(attacker).approveOutcome(0)).to.be.revertedWithCustomError(pm, "NotOwner");
+    await expect(pm.connect(attacker).rejectOutcome(0)).to.be.revertedWithCustomError(pm, "NotOwner");
+  });
+
+  it("rejectOutcome reverts after the review window closes", async () => {
+    const { pm, alice, bob, humanResolver, owner } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+    await pm.connect(humanResolver).resolve(0, true);
+
+    await time.increase(3 * 24 * 3600 + 1);
+    await expect(pm.connect(owner).rejectOutcome(0)).to.be.revertedWithCustomError(pm, "ReviewPeriodOver");
+  });
+
+  it("finalizeIfTimeout auto-approves the proposal after REVIEW_PERIOD", async () => {
+    const { pm, usdc, alice, bob, humanResolver, attacker } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+    await pm.connect(humanResolver).resolve(0, true);
+
+    await expect(pm.connect(attacker).finalizeIfTimeout(0)).to.be.revertedWithCustomError(pm, "StillInReview");
+
+    await time.increase(3 * 24 * 3600 + 1);
+
+    const resolverBefore = await usdc.balanceOf(humanResolver.address);
+    // Anyone (even attacker) can finalize after timeout
+    await expect(pm.connect(attacker).finalizeIfTimeout(0)).to.emit(pm, "MarketResolved");
+
+    expect((await usdc.balanceOf(humanResolver.address)) - resolverBefore).to.equal(RESOLVER_BOND);
+
+    const m = await pm.getMarket(0);
+    expect(m.outcome).to.equal(1); // Yes — proposer's choice was applied
+  });
+
+  it("approveOutcome works even after the review window (owner can be late)", async () => {
+    const { pm, alice, bob, humanResolver, owner } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+    await pm.connect(humanResolver).resolve(0, true);
+
+    await time.increase(5 * 24 * 3600);
+    await expect(pm.connect(owner).approveOutcome(0)).to.emit(pm, "MarketResolved");
+  });
+
+  it("approve / reject / timeout require a pending proposal", async () => {
+    const { pm, humanResolver, owner } = await deploy();
+    await newMarket(pm, humanResolver);
+    await expect(pm.connect(owner).approveOutcome(0)).to.be.revertedWithCustomError(pm, "NoProposal");
+    await expect(pm.connect(owner).rejectOutcome(0)).to.be.revertedWithCustomError(pm, "NoProposal");
+    await expect(pm.finalizeIfTimeout(0)).to.be.revertedWithCustomError(pm, "NoProposal");
+  });
+
+  it("markInvalid is blocked while a proposal is pending", async () => {
+    const { pm, alice, bob, humanResolver } = await deploy();
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+    await pm.connect(humanResolver).resolve(0, true);
+
+    // Even after grace period, markInvalid should defer to finalizeIfTimeout.
+    await time.increase(8 * 24 * 3600);
+    await expect(pm.markInvalid(0)).to.be.revertedWithCustomError(pm, "HasPendingProposal");
+  });
+
+  it("trusted resolver bypasses bond/review and finalizes instantly", async () => {
+    const { pm, alice, bob, humanResolver, owner } = await deploy();
+    await pm.connect(owner).setTrustedResolver(humanResolver.address, true);
+
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+
+    // No bond pulled, no proposal recorded — resolves in one tx.
+    await expect(pm.connect(humanResolver).resolve(0, true))
+      .to.emit(pm, "MarketResolved")
+      .and.to.not.emit(pm, "OutcomeProposed");
+
+    const m = await pm.getMarket(0);
+    expect(m.outcome).to.equal(1);
+    expect(m.resolverBondLocked).to.equal(0);
+  });
+
+  it("empty winning pool → instant Invalid even for non-trusted resolver, no bond charged", async () => {
+    const { pm, usdc, alice, humanResolver } = await deploy();
+    await newMarket(pm, humanResolver);
+    // Only NO side has bets
+    await pm.connect(alice).bet(0, false, 50n * ONE);
+    await time.increase(2 * 24 * 3600);
+
+    const resolverBefore = await usdc.balanceOf(humanResolver.address);
+    await expect(pm.connect(humanResolver).resolve(0, true)).to.emit(pm, "MarketInvalidated");
+
+    // Bond should not have been deducted from resolver (early-return before bond pull)
+    expect(await usdc.balanceOf(humanResolver.address)).to.equal(resolverBefore);
+
+    const m = await pm.getMarket(0);
+    expect(m.outcome).to.equal(3);
+  });
+
+  it("transferOwnership moves approve/reject powers", async () => {
+    const { pm, alice, bob, humanResolver, owner, attacker } = await deploy();
+    await pm.connect(owner).transferOwnership(attacker.address); // attacker is now owner
+    await newMarket(pm, humanResolver);
+    await setupBets(pm, alice, bob);
+    await pm.connect(humanResolver).resolve(0, true);
+
+    await expect(pm.connect(owner).approveOutcome(0)).to.be.revertedWithCustomError(pm, "NotOwner");
+    await expect(pm.connect(attacker).approveOutcome(0)).to.emit(pm, "MarketResolved");
+  });
+
+  it("only owner can manage the trusted resolver whitelist", async () => {
+    const { pm, attacker, humanResolver } = await deploy();
+    await expect(
+      pm.connect(attacker).setTrustedResolver(humanResolver.address, true)
+    ).to.be.revertedWithCustomError(pm, "NotOwner");
+  });
+});
+
+describe("ChainlinkPriceResolver", () => {
+  // Comparator enum: GreaterThan=0, GreaterOrEqual=1, LessThan=2, LessOrEqual=3
+  const GT = 0;
+  const LT = 2;
+
+  async function deploy() {
+    const [deployer, alice, bob, fee, owner] = await ethers.getSigners();
+
+    const Mock = await ethers.getContractFactory("MockUSDC");
+    const usdc = await Mock.deploy();
+    await usdc.waitForDeployment();
+
+    const Pm = await ethers.getContractFactory("PredictionMarket");
+    const pm = await Pm.deploy(
+      await usdc.getAddress(),
+      fee.address,
+      CREATION_FEE,
+      owner.address,
+      RESOLVER_BOND
+    );
     await pm.waitForDeployment();
 
     const Resolver = await ethers.getContractFactory("ChainlinkPriceResolver");
     const resolver = await Resolver.deploy(await pm.getAddress());
     await resolver.waitForDeployment();
+
+    // Whitelist the price resolver so it can finalize markets in one tx.
+    await pm.connect(owner).setTrustedResolver(await resolver.getAddress(), true);
 
     // Mock BTC/USD feed at 8 decimals; start at $75,000.
     const Agg = await ethers.getContractFactory("MockAggregator");
@@ -209,7 +490,7 @@ describe("ChainlinkPriceResolver", () => {
       await usdc.connect(s).approve(await pm.getAddress(), ethers.MaxUint256);
     }
 
-    return { pm, usdc, resolver, feed, alice, bob, fee };
+    return { pm, usdc, resolver, feed, alice, bob, fee, owner };
   }
 
   async function createPriceMarket(pm: any, resolverAddr: string, alice: any, daysAhead = 1) {

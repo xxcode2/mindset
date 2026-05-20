@@ -15,17 +15,27 @@ interface IERC20 {
  *  1. Anyone can create a market with a question, description, closeTime and resolver address.
  *  2. While open (block.timestamp < closeTime), users place YES or NO bets in the configured ERC20.
  *  3. After closeTime the resolver calls resolve(YES) or resolve(NO).
+ *      - If the resolver is on the `trustedResolver` whitelist (e.g. an automated oracle contract),
+ *        the market is finalized in the same call.
+ *      - Otherwise the call only PROPOSES an outcome and locks a `resolverBond`. The owner has
+ *        REVIEW_PERIOD seconds to approveOutcome() (finalize) or rejectOutcome() (slash bond,
+ *        invalidate market). If the owner stays silent past the deadline, anyone can call
+ *        finalizeIfTimeout() to apply the resolver's proposal and refund the bond.
  *  4. Winners call claim() and receive a share of the entire pool proportional to their stake:
  *        payout = (userBet * distributable) / winningPool
- *     A 1% protocol fee is taken from the LOSING pool only and sent to feeRecipient.
+ *     A 5% protocol fee is taken from the LOSING pool only and sent to feeRecipient.
  *  5. Safety net: if not resolved within RESOLUTION_GRACE_PERIOD after closeTime, anyone can call
  *     markInvalid(); bettors then call refund() to recover their stake. No funds get stuck.
  *
  * Trust model:
- *  - No owner, no admin, no upgrade path, no emergency withdraw on this contract.
+ *  - `owner` is a single role with two narrow powers: maintain the trustedResolver whitelist, and
+ *    approve/reject pending outcome proposals from non-trusted resolvers. The owner cannot move
+ *    user funds, cannot change fees, and cannot upgrade the contract.
  *  - feeRecipient and bettingToken are set in the constructor and immutable forever.
- *  - The deployer cannot move user funds. Only contract logic moves tokens.
- *  - Each market's resolver is chosen by the creator. Pick wisely (multisig, oracle, etc.).
+ *  - Each market's resolver is chosen by the creator. For human resolvers the bond + review window
+ *    bounds the damage of a dishonest resolution: at worst the market becomes Invalid and everyone
+ *    refunds (winners lose profit but not principal). For trusted oracle contracts the resolution
+ *    is instant and bond-free.
  */
 contract PredictionMarket {
     enum Outcome { Unresolved, Yes, No, Invalid }
@@ -48,9 +58,14 @@ contract PredictionMarket {
         uint32 noBettors;
         Outcome outcome;
         Category category;
+        // Two-phase resolution state (only used for non-trusted resolvers)
+        Outcome proposedOutcome;     // Unresolved when no proposal is pending
+        uint64 proposedAt;            // timestamp the proposal was submitted (0 if none)
+        uint128 resolverBondLocked;   // bond held in escrow for the pending proposal
     }
 
     uint256 public constant RESOLUTION_GRACE_PERIOD = 7 days;
+    uint256 public constant REVIEW_PERIOD = 3 days;
     uint16 public constant FEE_BPS = 500; // 5.00%
     uint16 public constant BPS_DENOMINATOR = 10_000;
 
@@ -58,10 +73,23 @@ contract PredictionMarket {
     ///         Set to 5 USDC (5 * 10^6) assuming 6-decimal token. Immutable.
     uint256 public immutable creationFee;
 
+    /// @notice Bond (in betting token units) that a non-trusted resolver must lock when proposing
+    ///         an outcome. Returned on approval or timeout finalization, slashed to feeRecipient on rejection.
+    uint256 public immutable resolverBond;
+
     /// @notice ERC20 token used for all bets and payouts. Immutable.
     IERC20 public immutable bettingToken;
-    /// @notice Receives the protocol fee from losing pools + creation fees. Immutable.
+    /// @notice Receives the protocol fee from losing pools + creation fees + slashed resolver bonds. Immutable.
     address public immutable feeRecipient;
+
+    /// @notice Single role permitted to approve/reject pending outcome proposals and to maintain
+    ///         the trustedResolver whitelist. Cannot move user funds.
+    address public owner;
+
+    /// @notice Resolvers in this set bypass the review window — their resolve() calls finalize the
+    ///         market in the same transaction and they pay no bond. Intended for automated, trustless
+    ///         resolver contracts (e.g. ChainlinkPriceResolver).
+    mapping(address => bool) public trustedResolver;
 
     uint256 public nextMarketId;
 
@@ -99,10 +127,22 @@ contract PredictionMarket {
     event MarketInvalidated(uint256 indexed marketId);
     event Claimed(uint256 indexed marketId, address indexed user, uint256 amount);
     event Refunded(uint256 indexed marketId, address indexed user, uint256 amount);
+    event OutcomeProposed(
+        uint256 indexed marketId,
+        address indexed resolver,
+        Outcome proposedOutcome,
+        uint64 reviewDeadline,
+        uint256 bondLocked
+    );
+    event OutcomeApproved(uint256 indexed marketId, address indexed approver);
+    event OutcomeRejected(uint256 indexed marketId, address indexed rejecter, uint256 bondSlashed);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event TrustedResolverSet(address indexed resolver, bool trusted);
 
     error InvalidFeeRecipient();
     error InvalidToken();
     error InvalidResolver();
+    error InvalidOwner();
     error EmptyQuestion();
     error CloseTimeInPast();
     error MarketNotOpen();
@@ -111,18 +151,56 @@ contract PredictionMarket {
     error AlreadyClaimed();
     error InvalidOutcome();
     error NotResolver();
+    error NotOwner();
     error NothingToClaim();
     error NotInGracePeriod();
     error TransferFailed();
     error ZeroBet();
     error CreationFeeFailed();
+    error AlreadyProposed();
+    error NoProposal();
+    error ReviewPeriodOver();
+    error StillInReview();
+    error HasPendingProposal();
 
-    constructor(IERC20 _bettingToken, address _feeRecipient, uint256 _creationFee) {
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    constructor(
+        IERC20 _bettingToken,
+        address _feeRecipient,
+        uint256 _creationFee,
+        address _owner,
+        uint256 _resolverBond
+    ) {
         if (address(_bettingToken) == address(0)) revert InvalidToken();
         if (_feeRecipient == address(0)) revert InvalidFeeRecipient();
+        if (_owner == address(0)) revert InvalidOwner();
         bettingToken = _bettingToken;
         feeRecipient = _feeRecipient;
         creationFee = _creationFee;
+        resolverBond = _resolverBond;
+        owner = _owner;
+        emit OwnershipTransferred(address(0), _owner);
+    }
+
+    // ─── Owner administration ────────────────────────────────────────────────
+
+    function transferOwnership(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert InvalidOwner();
+        address prev = owner;
+        owner = newOwner;
+        emit OwnershipTransferred(prev, newOwner);
+    }
+
+    /// @notice Mark a resolver address as trusted. Trusted resolvers finalize markets immediately
+    ///         and pay no bond. Use for audited oracle contracts only.
+    function setTrustedResolver(address resolver_, bool trusted) external onlyOwner {
+        if (resolver_ == address(0)) revert InvalidResolver();
+        trustedResolver[resolver_] = trusted;
+        emit TrustedResolverSet(resolver_, trusted);
     }
 
     // ─── Market lifecycle ────────────────────────────────────────────────────
@@ -157,7 +235,10 @@ contract PredictionMarket {
             yesBettors: 0,
             noBettors: 0,
             outcome: Outcome.Unresolved,
-            category: category
+            category: category,
+            proposedOutcome: Outcome.Unresolved,
+            proposedAt: 0,
+            resolverBondLocked: 0
         });
         _userCreated[msg.sender].push(marketId);
 
@@ -192,10 +273,21 @@ contract PredictionMarket {
         emit BetPlaced(marketId, msg.sender, yes, amount, m.yesPool, m.noPool);
     }
 
+    /**
+     * @notice Resolve (or propose to resolve) a market.
+     *         - Trusted resolvers: finalizes in the same call, no bond.
+     *         - Non-trusted (human) resolvers: locks `resolverBond`, sets a pending proposal that
+     *           the owner can approve/reject within REVIEW_PERIOD. After the window expires anyone
+     *           can call finalizeIfTimeout() to apply the proposal.
+     *         - Edge case: if the proposed winning side has zero pool, the market is immediately
+     *           marked Invalid (regardless of trust), bypassing the bond/review entirely so
+     *           bettors can refund.
+     */
     function resolve(uint256 marketId, bool yesWon) external {
         Market storage m = _markets[marketId];
         if (msg.sender != m.resolver) revert NotResolver();
         if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
+        if (m.proposedOutcome != Outcome.Unresolved) revert AlreadyProposed();
         if (block.timestamp < m.closeTime) revert MarketNotClosed();
 
         uint256 winningPool = yesWon ? m.yesPool : m.noPool;
@@ -210,27 +302,123 @@ contract PredictionMarket {
             return;
         }
 
-        m.outcome = yesWon ? Outcome.Yes : Outcome.No;
+        Outcome outcome = yesWon ? Outcome.Yes : Outcome.No;
 
-        uint256 losingPool = yesWon ? m.noPool : m.yesPool;
-        uint256 fee = (losingPool * FEE_BPS) / BPS_DENOMINATOR;
+        if (trustedResolver[msg.sender]) {
+            _finalize(marketId, outcome);
+            return;
+        }
 
-        emit MarketResolved(marketId, m.outcome, fee);
+        // Human resolver path: propose + bond + wait for owner.
+        m.proposedOutcome = outcome;
+        m.proposedAt = uint64(block.timestamp);
 
-        if (fee > 0) {
-            bool ok = bettingToken.transfer(feeRecipient, fee);
+        if (resolverBond > 0) {
+            m.resolverBondLocked = uint128(resolverBond);
+            bool ok = bettingToken.transferFrom(msg.sender, address(this), resolverBond);
+            if (!ok) revert TransferFailed();
+        }
+
+        emit OutcomeProposed(
+            marketId,
+            msg.sender,
+            outcome,
+            uint64(block.timestamp + REVIEW_PERIOD),
+            resolverBond
+        );
+    }
+
+    /// @notice Owner approves a pending proposal — finalizes the market and refunds the resolver's bond.
+    function approveOutcome(uint256 marketId) external onlyOwner {
+        Market storage m = _markets[marketId];
+        if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
+        if (m.proposedOutcome == Outcome.Unresolved) revert NoProposal();
+
+        Outcome outcome = m.proposedOutcome;
+        uint256 bond = m.resolverBondLocked;
+        address resolverAddr = m.resolver;
+        m.resolverBondLocked = 0;
+        m.proposedOutcome = Outcome.Unresolved;
+
+        emit OutcomeApproved(marketId, msg.sender);
+        _finalize(marketId, outcome);
+
+        if (bond > 0) {
+            bool ok = bettingToken.transfer(resolverAddr, bond);
+            if (!ok) revert TransferFailed();
+        }
+    }
+
+    /// @notice Owner rejects a pending proposal — slashes the resolver's bond and invalidates the
+    ///         market so all bettors can refund their stake. Only callable during the review window.
+    function rejectOutcome(uint256 marketId) external onlyOwner {
+        Market storage m = _markets[marketId];
+        if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
+        if (m.proposedOutcome == Outcome.Unresolved) revert NoProposal();
+        if (block.timestamp >= uint256(m.proposedAt) + REVIEW_PERIOD) revert ReviewPeriodOver();
+
+        uint256 bond = m.resolverBondLocked;
+        m.resolverBondLocked = 0;
+        m.proposedOutcome = Outcome.Unresolved;
+        m.outcome = Outcome.Invalid;
+
+        emit OutcomeRejected(marketId, msg.sender, bond);
+        emit MarketInvalidated(marketId);
+
+        if (bond > 0) {
+            bool ok = bettingToken.transfer(feeRecipient, bond);
+            if (!ok) revert TransferFailed();
+        }
+    }
+
+    /// @notice After REVIEW_PERIOD with no owner action, anyone can finalize the resolver's proposal.
+    ///         Default-trust: silent owner = approval. Bond is refunded to the resolver.
+    function finalizeIfTimeout(uint256 marketId) external {
+        Market storage m = _markets[marketId];
+        if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
+        if (m.proposedOutcome == Outcome.Unresolved) revert NoProposal();
+        if (block.timestamp < uint256(m.proposedAt) + REVIEW_PERIOD) revert StillInReview();
+
+        Outcome outcome = m.proposedOutcome;
+        uint256 bond = m.resolverBondLocked;
+        address resolverAddr = m.resolver;
+        m.resolverBondLocked = 0;
+        m.proposedOutcome = Outcome.Unresolved;
+
+        _finalize(marketId, outcome);
+
+        if (bond > 0) {
+            bool ok = bettingToken.transfer(resolverAddr, bond);
             if (!ok) revert TransferFailed();
         }
     }
 
     /// @notice After grace period, anyone can mark a stuck market as invalid so bettors get refunds.
+    ///         Blocked while a resolver proposal is pending — finalizeIfTimeout() handles that case.
     function markInvalid(uint256 marketId) external {
         Market storage m = _markets[marketId];
         if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
+        if (m.proposedOutcome != Outcome.Unresolved) revert HasPendingProposal();
         if (block.timestamp < uint256(m.closeTime) + RESOLUTION_GRACE_PERIOD) revert NotInGracePeriod();
 
         m.outcome = Outcome.Invalid;
         emit MarketInvalidated(marketId);
+    }
+
+    function _finalize(uint256 marketId, Outcome outcome) internal {
+        Market storage m = _markets[marketId];
+        m.outcome = outcome;
+
+        bool yesWon = (outcome == Outcome.Yes);
+        uint256 losingPool = yesWon ? m.noPool : m.yesPool;
+        uint256 fee = (losingPool * FEE_BPS) / BPS_DENOMINATOR;
+
+        emit MarketResolved(marketId, outcome, fee);
+
+        if (fee > 0) {
+            bool ok = bettingToken.transfer(feeRecipient, fee);
+            if (!ok) revert TransferFailed();
+        }
     }
 
     // ─── Payouts ─────────────────────────────────────────────────────────────
