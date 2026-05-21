@@ -2,16 +2,15 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
-interface IERC20 {
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function transfer(address to, uint256 amount) external returns (bool);
-    function balanceOf(address account) external view returns (uint256);
-}
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title PredictionMarket
  * @notice Non-custodial parimutuel binary (YES/NO) prediction markets denominated in an ERC20 token (USDC).
+ * @dev    This contract uses OpenZeppelin's SafeERC20 for all token transfers. It is designed and tested
+ *         exclusively with standard ERC20 tokens (specifically USDC with 6 decimals). Fee-on-transfer,
+ *         rebasing, or other non-standard ERC20 tokens are NOT supported and will cause accounting errors.
  *
  * Mechanics:
  *  1. Anyone can create a market with a question, description, closeTime and resolver address.
@@ -40,6 +39,7 @@ interface IERC20 {
  *    is instant and bond-free.
  */
 contract PredictionMarket is ReentrancyGuard {
+    using SafeERC20 for IERC20;
     enum Outcome { Unresolved, Yes, No, Invalid }
 
     /// @notice Discovery + UI categorization. Stored as a hint; pure presentation in the contract,
@@ -199,6 +199,7 @@ contract PredictionMarket is ReentrancyGuard {
         if (address(_bettingToken) == address(0)) revert InvalidToken();
         if (_feeRecipient == address(0)) revert InvalidFeeRecipient();
         if (_owner == address(0)) revert InvalidOwner();
+        if (_resolverBond > MAX_RESOLVER_BOND) revert BondTooHigh();
         bettingToken = _bettingToken;
         feeRecipient = _feeRecipient;
         creationFee = _creationFee;
@@ -260,8 +261,7 @@ contract PredictionMarket is ReentrancyGuard {
 
         // Charge creation fee (anti-spam). Requires prior approval.
         if (creationFee > 0) {
-            bool ok = bettingToken.transferFrom(msg.sender, feeRecipient, creationFee);
-            if (!ok) revert CreationFeeFailed();
+            bettingToken.safeTransferFrom(msg.sender, feeRecipient, creationFee);
         }
 
         marketId = nextMarketId++;
@@ -295,8 +295,7 @@ contract PredictionMarket is ReentrancyGuard {
         if (block.timestamp >= m.closeTime) revert MarketNotOpen();
 
         // Pull tokens; require approval beforehand.
-        bool ok = bettingToken.transferFrom(msg.sender, address(this), amount);
-        if (!ok) revert TransferFailed();
+        bettingToken.safeTransferFrom(msg.sender, address(this), amount);
 
         if (yes) {
             if (yesBets[marketId][msg.sender] == 0) m.yesBettors += 1;
@@ -358,8 +357,7 @@ contract PredictionMarket is ReentrancyGuard {
 
         if (resolverBond > 0) {
             m.resolverBondLocked = uint128(resolverBond);
-            bool ok = bettingToken.transferFrom(msg.sender, address(this), resolverBond);
-            if (!ok) revert TransferFailed();
+            bettingToken.safeTransferFrom(msg.sender, address(this), resolverBond);
         }
 
         emit OutcomeProposed(
@@ -387,8 +385,7 @@ contract PredictionMarket is ReentrancyGuard {
         _finalize(marketId, outcome);
 
         if (bond > 0) {
-            bool ok = bettingToken.transfer(resolverAddr, bond);
-            if (!ok) revert TransferFailed();
+            bettingToken.safeTransfer(resolverAddr, bond);
         }
     }
 
@@ -409,8 +406,7 @@ contract PredictionMarket is ReentrancyGuard {
         emit MarketInvalidated(marketId);
 
         if (bond > 0) {
-            bool ok = bettingToken.transfer(feeRecipient, bond);
-            if (!ok) revert TransferFailed();
+            bettingToken.safeTransfer(feeRecipient, bond);
         }
     }
 
@@ -431,8 +427,7 @@ contract PredictionMarket is ReentrancyGuard {
         _finalize(marketId, outcome);
 
         if (bond > 0) {
-            bool ok = bettingToken.transfer(resolverAddr, bond);
-            if (!ok) revert TransferFailed();
+            bettingToken.safeTransfer(resolverAddr, bond);
         }
     }
 
@@ -459,8 +454,7 @@ contract PredictionMarket is ReentrancyGuard {
         emit MarketResolved(marketId, outcome, fee);
 
         if (fee > 0) {
-            bool ok = bettingToken.transfer(feeRecipient, fee);
-            if (!ok) revert TransferFailed();
+            bettingToken.safeTransfer(feeRecipient, fee);
         }
     }
 
@@ -492,8 +486,7 @@ contract PredictionMarket is ReentrancyGuard {
         hasClaimed[marketId][msg.sender] = true;
         emit Claimed(marketId, msg.sender, payout);
 
-        bool ok = bettingToken.transfer(msg.sender, payout);
-        if (!ok) revert TransferFailed();
+        bettingToken.safeTransfer(msg.sender, payout);
     }
 
     function refund(uint256 marketId) external nonReentrant {
@@ -507,8 +500,7 @@ contract PredictionMarket is ReentrancyGuard {
         hasClaimed[marketId][msg.sender] = true;
         emit Refunded(marketId, msg.sender, amount);
 
-        bool ok = bettingToken.transfer(msg.sender, amount);
-        if (!ok) revert TransferFailed();
+        bettingToken.safeTransfer(msg.sender, amount);
     }
 
     // ─── Batch operations ───────────────────────────────────────────────────
@@ -542,8 +534,7 @@ contract PredictionMarket is ReentrancyGuard {
             hasClaimed[mid][msg.sender] = true;
             emit Claimed(mid, msg.sender, payout);
 
-            bool ok = bettingToken.transfer(msg.sender, payout);
-            if (!ok) revert TransferFailed();
+            bettingToken.safeTransfer(msg.sender, payout);
         }
     }
 
@@ -562,8 +553,7 @@ contract PredictionMarket is ReentrancyGuard {
             hasClaimed[mid][msg.sender] = true;
             emit Refunded(mid, msg.sender, amount);
 
-            bool ok = bettingToken.transfer(msg.sender, amount);
-            if (!ok) revert TransferFailed();
+            bettingToken.safeTransfer(msg.sender, amount);
         }
     }
 

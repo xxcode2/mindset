@@ -214,7 +214,7 @@ export default function CreatePage() {
         address: TOKEN_ADDRESS,
         abi: erc20Abi,
         functionName: "approve",
-        args: [CONTRACT_ADDRESS, 2n ** 256n - 1n], // max approval
+        args: [CONTRACT_ADDRESS, creationFee],
       });
       return;
     }
