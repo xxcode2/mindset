@@ -642,3 +642,102 @@ describe("ChainlinkPriceResolver", () => {
     expect(decimals_).to.equal(8);
   });
 });
+
+
+
+describe("PredictionMarket hardening", () => {
+  const CREATION_FEE = 5_000_000n;
+  const RESOLVER_BOND = 10_000_000n;
+
+  async function deploy() {
+    const [deployer, alice, bob, resolver, fee, owner] = await ethers.getSigners();
+    const Mock = await ethers.getContractFactory("MockUSDC");
+    const usdc = await Mock.deploy();
+    await usdc.waitForDeployment();
+
+    const Pm = await ethers.getContractFactory("PredictionMarket");
+    const pm = await Pm.deploy(
+      await usdc.getAddress(),
+      fee.address,
+      CREATION_FEE,
+      owner.address,
+      RESOLVER_BOND
+    );
+    await pm.waitForDeployment();
+    await pm.connect(owner).setTrustedResolver(resolver.address, true);
+
+    for (const s of [deployer, alice, bob]) {
+      await usdc.connect(s).faucet();
+      await usdc.connect(s).approve(await pm.getAddress(), ethers.MaxUint256);
+    }
+    return { pm, usdc, deployer, alice, bob, resolver, fee, owner };
+  }
+
+  it("reverts bet exceeding uint128 max", async () => {
+    const { pm, resolver } = await deploy();
+    const closeTime = (await time.latest()) + 24 * 3600;
+    await pm.createMarket("Q?", "D", closeTime, resolver.address, 0);
+
+    const tooBig = 2n ** 128n;
+    await expect(pm.bet(0, true, tooBig)).to.be.revertedWithCustomError(pm, "BetTooLarge");
+  });
+
+  it("claimBatch claims multiple winning markets in one tx", async () => {
+    const { pm, usdc, alice, bob, resolver } = await deploy();
+    // Create 3 markets, alice bets YES on each, bob bets NO
+    for (let i = 0; i < 3; i++) {
+      const closeTime = (await time.latest()) + 24 * 3600;
+      await pm.createMarket(`Q${i}?`, "D", closeTime, resolver.address, 0);
+      await pm.connect(alice).bet(BigInt(i), true, 10_000_000n);
+      await pm.connect(bob).bet(BigInt(i), false, 10_000_000n);
+    }
+    await time.increase(2 * 24 * 3600);
+    for (let i = 0; i < 3; i++) {
+      await pm.connect(resolver).resolve(BigInt(i), true);
+    }
+
+    const before = await usdc.balanceOf(alice.address);
+    await pm.connect(alice).claimBatch([0n, 1n, 2n]);
+    const after = await usdc.balanceOf(alice.address);
+    // Each market: distributable = 10 + 10 - 0.5 = 19.5 USDC → alice gets 19.5 per market
+    expect(after - before).to.equal(19_500_000n * 3n);
+
+    // Verify hasClaimed set
+    expect(await pm.hasClaimed(0, alice.address)).to.be.true;
+    expect(await pm.hasClaimed(1, alice.address)).to.be.true;
+    expect(await pm.hasClaimed(2, alice.address)).to.be.true;
+  });
+
+  it("claimBatch skips markets with nothing to claim", async () => {
+    const { pm, usdc, alice, bob, resolver } = await deploy();
+    const closeTime = (await time.latest()) + 24 * 3600;
+    await pm.createMarket("Q?", "D", closeTime, resolver.address, 0);
+    await pm.connect(alice).bet(0n, true, 10_000_000n);
+    await pm.connect(bob).bet(0n, false, 10_000_000n);
+    await time.increase(2 * 24 * 3600);
+    await pm.connect(resolver).resolve(0n, true);
+
+    // Bob is loser — calling claimBatch should not revert, just skip
+    const before = await usdc.balanceOf(bob.address);
+    await pm.connect(bob).claimBatch([0n]);
+    const after = await usdc.balanceOf(bob.address);
+    expect(after - before).to.equal(0n);
+  });
+
+  it("refundBatch refunds multiple invalid markets in one tx", async () => {
+    const { pm, usdc, alice, resolver } = await deploy();
+    for (let i = 0; i < 2; i++) {
+      const closeTime = (await time.latest()) + 24 * 3600;
+      await pm.createMarket(`Q${i}?`, "D", closeTime, resolver.address, 0);
+      await pm.connect(alice).bet(BigInt(i), true, 20_000_000n);
+    }
+    await time.increase(8 * 24 * 3600);
+    await pm.markInvalid(0n);
+    await pm.markInvalid(1n);
+
+    const before = await usdc.balanceOf(alice.address);
+    await pm.connect(alice).refundBatch([0n, 1n]);
+    const after = await usdc.balanceOf(alice.address);
+    expect(after - before).to.equal(40_000_000n);
+  });
+});

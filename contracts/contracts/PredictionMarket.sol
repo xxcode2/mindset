@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 interface IERC20 {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function transfer(address to, uint256 amount) external returns (bool);
@@ -37,7 +39,7 @@ interface IERC20 {
  *    refunds (winners lose profit but not principal). For trusted oracle contracts the resolution
  *    is instant and bond-free.
  */
-contract PredictionMarket {
+contract PredictionMarket is ReentrancyGuard {
     enum Outcome { Unresolved, Yes, No, Invalid }
 
     /// @notice Discovery + UI categorization. Stored as a hint; pure presentation in the contract,
@@ -162,6 +164,7 @@ contract PredictionMarket {
     error ReviewPeriodOver();
     error StillInReview();
     error HasPendingProposal();
+    error BetTooLarge();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -245,8 +248,9 @@ contract PredictionMarket {
         emit MarketCreated(marketId, msg.sender, resolver, question, description, closeTime, category);
     }
 
-    function bet(uint256 marketId, bool yes, uint256 amount) external {
+    function bet(uint256 marketId, bool yes, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroBet();
+        if (amount > type(uint128).max) revert BetTooLarge();
         Market storage m = _markets[marketId];
         if (m.outcome != Outcome.Unresolved) revert MarketNotOpen();
         if (block.timestamp >= m.closeTime) revert MarketNotOpen();
@@ -283,7 +287,7 @@ contract PredictionMarket {
      *           marked Invalid (regardless of trust), bypassing the bond/review entirely so
      *           bettors can refund.
      */
-    function resolve(uint256 marketId, bool yesWon) external {
+    function resolve(uint256 marketId, bool yesWon) external nonReentrant {
         Market storage m = _markets[marketId];
         if (msg.sender != m.resolver) revert NotResolver();
         if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
@@ -329,7 +333,7 @@ contract PredictionMarket {
     }
 
     /// @notice Owner approves a pending proposal — finalizes the market and refunds the resolver's bond.
-    function approveOutcome(uint256 marketId) external onlyOwner {
+    function approveOutcome(uint256 marketId) external onlyOwner nonReentrant {
         Market storage m = _markets[marketId];
         if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
         if (m.proposedOutcome == Outcome.Unresolved) revert NoProposal();
@@ -351,7 +355,7 @@ contract PredictionMarket {
 
     /// @notice Owner rejects a pending proposal — slashes the resolver's bond and invalidates the
     ///         market so all bettors can refund their stake. Only callable during the review window.
-    function rejectOutcome(uint256 marketId) external onlyOwner {
+    function rejectOutcome(uint256 marketId) external onlyOwner nonReentrant {
         Market storage m = _markets[marketId];
         if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
         if (m.proposedOutcome == Outcome.Unresolved) revert NoProposal();
@@ -373,7 +377,7 @@ contract PredictionMarket {
 
     /// @notice After REVIEW_PERIOD with no owner action, anyone can finalize the resolver's proposal.
     ///         Default-trust: silent owner = approval. Bond is refunded to the resolver.
-    function finalizeIfTimeout(uint256 marketId) external {
+    function finalizeIfTimeout(uint256 marketId) external nonReentrant {
         Market storage m = _markets[marketId];
         if (m.outcome != Outcome.Unresolved) revert MarketAlreadyResolved();
         if (m.proposedOutcome == Outcome.Unresolved) revert NoProposal();
@@ -423,7 +427,7 @@ contract PredictionMarket {
 
     // ─── Payouts ─────────────────────────────────────────────────────────────
 
-    function claim(uint256 marketId) external {
+    function claim(uint256 marketId) external nonReentrant {
         Market storage m = _markets[marketId];
         if (m.outcome == Outcome.Unresolved) revert MarketNotClosed();
         if (m.outcome == Outcome.Invalid) revert InvalidOutcome();
@@ -453,7 +457,7 @@ contract PredictionMarket {
         if (!ok) revert TransferFailed();
     }
 
-    function refund(uint256 marketId) external {
+    function refund(uint256 marketId) external nonReentrant {
         Market storage m = _markets[marketId];
         if (m.outcome != Outcome.Invalid) revert InvalidOutcome();
         if (hasClaimed[marketId][msg.sender]) revert AlreadyClaimed();
@@ -466,6 +470,62 @@ contract PredictionMarket {
 
         bool ok = bettingToken.transfer(msg.sender, amount);
         if (!ok) revert TransferFailed();
+    }
+
+    // ─── Batch operations ───────────────────────────────────────────────────
+
+    /// @notice Claim winnings from multiple markets in a single transaction.
+    ///         Skips markets where the caller has nothing to claim (no revert).
+    function claimBatch(uint256[] calldata marketIds) external nonReentrant {
+        for (uint256 i = 0; i < marketIds.length; i++) {
+            uint256 mid = marketIds[i];
+            Market storage m = _markets[mid];
+            if (m.outcome == Outcome.Unresolved || m.outcome == Outcome.Invalid) continue;
+            if (hasClaimed[mid][msg.sender]) continue;
+
+            uint256 payout;
+            if (m.outcome == Outcome.Yes) {
+                uint256 stake = yesBets[mid][msg.sender];
+                if (stake == 0) continue;
+                uint256 losingPool = m.noPool;
+                uint256 fee = (losingPool * FEE_BPS) / BPS_DENOMINATOR;
+                uint256 distributable = uint256(m.yesPool) + losingPool - fee;
+                payout = (stake * distributable) / m.yesPool;
+            } else {
+                uint256 stake = noBets[mid][msg.sender];
+                if (stake == 0) continue;
+                uint256 losingPool = m.yesPool;
+                uint256 fee = (losingPool * FEE_BPS) / BPS_DENOMINATOR;
+                uint256 distributable = uint256(m.noPool) + losingPool - fee;
+                payout = (stake * distributable) / m.noPool;
+            }
+
+            hasClaimed[mid][msg.sender] = true;
+            emit Claimed(mid, msg.sender, payout);
+
+            bool ok = bettingToken.transfer(msg.sender, payout);
+            if (!ok) revert TransferFailed();
+        }
+    }
+
+    /// @notice Refund stakes from multiple invalidated markets in a single transaction.
+    ///         Skips markets where the caller has nothing to refund (no revert).
+    function refundBatch(uint256[] calldata marketIds) external nonReentrant {
+        for (uint256 i = 0; i < marketIds.length; i++) {
+            uint256 mid = marketIds[i];
+            Market storage m = _markets[mid];
+            if (m.outcome != Outcome.Invalid) continue;
+            if (hasClaimed[mid][msg.sender]) continue;
+
+            uint256 amount = yesBets[mid][msg.sender] + noBets[mid][msg.sender];
+            if (amount == 0) continue;
+
+            hasClaimed[mid][msg.sender] = true;
+            emit Refunded(mid, msg.sender, amount);
+
+            bool ok = bettingToken.transfer(msg.sender, amount);
+            if (!ok) revert TransferFailed();
+        }
     }
 
     // ─── Views ───────────────────────────────────────────────────────────────

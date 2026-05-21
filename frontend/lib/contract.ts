@@ -130,6 +130,20 @@ export const predictionMarketAbi = [
   { type: "function", name: "refund", inputs: [{ name: "marketId", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
   {
     type: "function",
+    name: "claimBatch",
+    inputs: [{ name: "marketIds", type: "uint256[]" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "refundBatch",
+    inputs: [{ name: "marketIds", type: "uint256[]" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "getMarket",
     inputs: [{ name: "marketId", type: "uint256" }],
     outputs: [
