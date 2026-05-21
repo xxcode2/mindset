@@ -741,3 +741,151 @@ describe("PredictionMarket hardening", () => {
     expect(after - before).to.equal(40_000_000n);
   });
 });
+
+
+describe("PredictionMarket pause + setResolverBond", () => {
+  const CREATION_FEE = 5_000_000n;
+  const RESOLVER_BOND = 10_000_000n;
+
+  async function deploy() {
+    const [deployer, alice, bob, resolver, fee, owner, attacker] = await ethers.getSigners();
+    const Mock = await ethers.getContractFactory("MockUSDC");
+    const usdc = await Mock.deploy();
+    await usdc.waitForDeployment();
+
+    const Pm = await ethers.getContractFactory("PredictionMarket");
+    const pm = await Pm.deploy(
+      await usdc.getAddress(),
+      fee.address,
+      CREATION_FEE,
+      owner.address,
+      RESOLVER_BOND
+    );
+    await pm.waitForDeployment();
+    await pm.connect(owner).setTrustedResolver(resolver.address, true);
+
+    for (const s of [deployer, alice, bob]) {
+      await usdc.connect(s).faucet();
+      await usdc.connect(s).approve(await pm.getAddress(), ethers.MaxUint256);
+    }
+    return { pm, usdc, deployer, alice, bob, resolver, fee, owner, attacker };
+  }
+
+  // ─── Pause tests ──────────────────────────────────────────────────────────
+
+  it("owner can pause — blocks createMarket and bet", async () => {
+    const { pm, alice, resolver, owner } = await deploy();
+    const closeTime = (await time.latest()) + 24 * 3600;
+    await pm.createMarket("Q?", "D", closeTime, resolver.address, 0);
+
+    await expect(pm.connect(owner).pause()).to.emit(pm, "Paused");
+    expect(await pm.paused()).to.be.true;
+
+    // createMarket blocked
+    await expect(
+      pm.connect(alice).createMarket("Q2?", "D", closeTime + 100, resolver.address, 0)
+    ).to.be.revertedWithCustomError(pm, "ContractPaused");
+
+    // bet blocked
+    await expect(
+      pm.connect(alice).bet(0, true, 1_000_000n)
+    ).to.be.revertedWithCustomError(pm, "ContractPaused");
+  });
+
+  it("claim and refund still work while paused", async () => {
+    const { pm, usdc, alice, bob, resolver, owner } = await deploy();
+    const closeTime = (await time.latest()) + 24 * 3600;
+    await pm.createMarket("Q?", "D", closeTime, resolver.address, 0);
+    await pm.connect(alice).bet(0, true, 10_000_000n);
+    await pm.connect(bob).bet(0, false, 10_000_000n);
+    await time.increase(2 * 24 * 3600);
+    await pm.connect(resolver).resolve(0, true);
+
+    // Pause AFTER resolution
+    await pm.connect(owner).pause();
+
+    // claim still works
+    const before = await usdc.balanceOf(alice.address);
+    await pm.connect(alice).claim(0);
+    expect((await usdc.balanceOf(alice.address)) - before).to.be.gt(0n);
+  });
+
+  it("owner can unpause — re-enables createMarket and bet", async () => {
+    const { pm, alice, resolver, owner } = await deploy();
+    await pm.connect(owner).pause();
+
+    await expect(pm.connect(owner).unpause()).to.emit(pm, "Unpaused");
+    expect(await pm.paused()).to.be.false;
+
+    // Now createMarket works again
+    const closeTime = (await time.latest()) + 24 * 3600;
+    await expect(
+      pm.connect(alice).createMarket("Q?", "D", closeTime, resolver.address, 0)
+    ).to.not.be.reverted;
+  });
+
+  it("non-owner cannot pause or unpause", async () => {
+    const { pm, attacker, owner } = await deploy();
+    await expect(pm.connect(attacker).pause()).to.be.revertedWithCustomError(pm, "NotOwner");
+    await pm.connect(owner).pause();
+    await expect(pm.connect(attacker).unpause()).to.be.revertedWithCustomError(pm, "NotOwner");
+  });
+
+  // ─── setResolverBond tests ────────────────────────────────────────────────
+
+  it("owner can adjust resolverBond", async () => {
+    const { pm, owner } = await deploy();
+    expect(await pm.resolverBond()).to.equal(RESOLVER_BOND);
+
+    await expect(pm.connect(owner).setResolverBond(20_000_000n))
+      .to.emit(pm, "ResolverBondUpdated")
+      .withArgs(RESOLVER_BOND, 20_000_000n);
+
+    expect(await pm.resolverBond()).to.equal(20_000_000n);
+  });
+
+  it("reverts if bond exceeds MAX_RESOLVER_BOND", async () => {
+    const { pm, owner } = await deploy();
+    const tooHigh = 100_000_001n; // 1 unit over the 100 USDC cap
+    await expect(
+      pm.connect(owner).setResolverBond(tooHigh)
+    ).to.be.revertedWithCustomError(pm, "BondTooHigh");
+  });
+
+  it("owner can set bond to zero (disables bond requirement)", async () => {
+    const { pm, owner } = await deploy();
+    await pm.connect(owner).setResolverBond(0n);
+    expect(await pm.resolverBond()).to.equal(0n);
+  });
+
+  it("non-owner cannot adjust resolverBond", async () => {
+    const { pm, attacker } = await deploy();
+    await expect(
+      pm.connect(attacker).setResolverBond(1n)
+    ).to.be.revertedWithCustomError(pm, "NotOwner");
+  });
+
+  it("new bond applies to future proposals (not retroactive)", async () => {
+    const { pm, usdc, alice, bob, owner } = await deploy();
+    // Deploy a human resolver (not trusted)
+    const [,,,,,,, humanResolver] = await ethers.getSigners();
+    await usdc.connect(humanResolver).faucet();
+    await usdc.connect(humanResolver).approve(await pm.getAddress(), ethers.MaxUint256);
+
+    const closeTime = (await time.latest()) + 24 * 3600;
+    await pm.createMarket("Q?", "D", closeTime, humanResolver.address, 0);
+    await pm.connect(alice).bet(0, true, 10_000_000n);
+    await pm.connect(bob).bet(0, false, 10_000_000n);
+
+    // Raise bond to 50 USDC
+    await pm.connect(owner).setResolverBond(50_000_000n);
+
+    await time.increase(2 * 24 * 3600);
+
+    // Resolver must now lock the new 50 USDC bond
+    const resolverBefore = await usdc.balanceOf(humanResolver.address);
+    await pm.connect(humanResolver).resolve(0, true);
+    const resolverAfter = await usdc.balanceOf(humanResolver.address);
+    expect(resolverBefore - resolverAfter).to.equal(50_000_000n);
+  });
+});

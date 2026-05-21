@@ -52,6 +52,8 @@ export const predictionMarketAbi = [
   },
   { type: "function", name: "REVIEW_PERIOD", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
   { type: "function", name: "RESOLUTION_GRACE_PERIOD", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "MAX_RESOLVER_BOND", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "paused", inputs: [], outputs: [{ type: "bool" }], stateMutability: "view" },
   { type: "function", name: "nextMarketId", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
   {
     type: "function",
@@ -70,6 +72,15 @@ export const predictionMarketAbi = [
     outputs: [],
     stateMutability: "nonpayable",
   },
+  {
+    type: "function",
+    name: "setResolverBond",
+    inputs: [{ name: "newBond", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  { type: "function", name: "pause", inputs: [], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "unpause", inputs: [], outputs: [], stateMutability: "nonpayable" },
   {
     type: "function",
     name: "createMarket",
@@ -298,6 +309,27 @@ export const predictionMarketAbi = [
       { name: "rejecter", type: "address", indexed: true },
       { name: "bondSlashed", type: "uint256", indexed: false },
     ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "ResolverBondUpdated",
+    inputs: [
+      { name: "oldBond", type: "uint256", indexed: false },
+      { name: "newBond", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Paused",
+    inputs: [{ name: "account", type: "address", indexed: false }],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Unpaused",
+    inputs: [{ name: "account", type: "address", indexed: false }],
     anonymous: false,
   },
 ] as const;

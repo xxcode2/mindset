@@ -71,22 +71,30 @@ contract PredictionMarket is ReentrancyGuard {
     uint16 public constant FEE_BPS = 500; // 5.00%
     uint16 public constant BPS_DENOMINATOR = 10_000;
 
+    /// @notice Maximum allowed resolver bond. Prevents owner from setting absurdly high bond.
+    uint256 public constant MAX_RESOLVER_BOND = 100_000_000; // 100 USDC (6 decimals)
+
     /// @notice Fixed fee (in betting token units) charged when creating a market. Sent to feeRecipient.
     ///         Set to 5 USDC (5 * 10^6) assuming 6-decimal token. Immutable.
     uint256 public immutable creationFee;
 
     /// @notice Bond (in betting token units) that a non-trusted resolver must lock when proposing
     ///         an outcome. Returned on approval or timeout finalization, slashed to feeRecipient on rejection.
-    uint256 public immutable resolverBond;
+    ///         Owner-adjustable up to MAX_RESOLVER_BOND.
+    uint256 public resolverBond;
 
     /// @notice ERC20 token used for all bets and payouts. Immutable.
     IERC20 public immutable bettingToken;
     /// @notice Receives the protocol fee from losing pools + creation fees + slashed resolver bonds. Immutable.
     address public immutable feeRecipient;
 
-    /// @notice Single role permitted to approve/reject pending outcome proposals and to maintain
-    ///         the trustedResolver whitelist. Cannot move user funds.
+    /// @notice Single role permitted to approve/reject pending outcome proposals, maintain
+    ///         the trustedResolver whitelist, adjust resolverBond, and pause/unpause the market.
+    ///         Cannot move user funds.
     address public owner;
+
+    /// @notice When true, bet() and createMarket() are blocked. claim/refund always available.
+    bool public paused;
 
     /// @notice Resolvers in this set bypass the review window — their resolve() calls finalize the
     ///         market in the same transaction and they pay no bond. Intended for automated, trustless
@@ -140,6 +148,9 @@ contract PredictionMarket is ReentrancyGuard {
     event OutcomeRejected(uint256 indexed marketId, address indexed rejecter, uint256 bondSlashed);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event TrustedResolverSet(address indexed resolver, bool trusted);
+    event ResolverBondUpdated(uint256 oldBond, uint256 newBond);
+    event Paused(address account);
+    event Unpaused(address account);
 
     error InvalidFeeRecipient();
     error InvalidToken();
@@ -165,9 +176,16 @@ contract PredictionMarket is ReentrancyGuard {
     error StillInReview();
     error HasPendingProposal();
     error BetTooLarge();
+    error BondTooHigh();
+    error ContractPaused();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    modifier whenNotPaused() {
+        if (paused) revert ContractPaused();
         _;
     }
 
@@ -206,6 +224,27 @@ contract PredictionMarket is ReentrancyGuard {
         emit TrustedResolverSet(resolver_, trusted);
     }
 
+    /// @notice Adjust the resolver bond. Capped at MAX_RESOLVER_BOND to prevent abuse.
+    function setResolverBond(uint256 newBond) external onlyOwner {
+        if (newBond > MAX_RESOLVER_BOND) revert BondTooHigh();
+        uint256 oldBond = resolverBond;
+        resolverBond = newBond;
+        emit ResolverBondUpdated(oldBond, newBond);
+    }
+
+    /// @notice Pause bet() and createMarket(). claim/refund/resolve remain available.
+    ///         Use only in emergency (critical bug discovered post-deploy).
+    function pause() external onlyOwner {
+        paused = true;
+        emit Paused(msg.sender);
+    }
+
+    /// @notice Unpause — re-enable bet() and createMarket().
+    function unpause() external onlyOwner {
+        paused = false;
+        emit Unpaused(msg.sender);
+    }
+
     // ─── Market lifecycle ────────────────────────────────────────────────────
 
     function createMarket(
@@ -214,7 +253,7 @@ contract PredictionMarket is ReentrancyGuard {
         uint64 closeTime,
         address resolver,
         Category category
-    ) external returns (uint256 marketId) {
+    ) external whenNotPaused returns (uint256 marketId) {
         if (bytes(question).length == 0 || bytes(question).length > 280) revert EmptyQuestion();
         if (closeTime <= block.timestamp) revert CloseTimeInPast();
         if (resolver == address(0)) revert InvalidResolver();
@@ -248,7 +287,7 @@ contract PredictionMarket is ReentrancyGuard {
         emit MarketCreated(marketId, msg.sender, resolver, question, description, closeTime, category);
     }
 
-    function bet(uint256 marketId, bool yes, uint256 amount) external nonReentrant {
+    function bet(uint256 marketId, bool yes, uint256 amount) external nonReentrant whenNotPaused {
         if (amount == 0) revert ZeroBet();
         if (amount > type(uint128).max) revert BetTooLarge();
         Market storage m = _markets[marketId];
