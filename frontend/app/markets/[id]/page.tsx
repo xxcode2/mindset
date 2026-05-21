@@ -59,6 +59,7 @@ export default function MarketDetailPage() {
   const ownerAddr = configBatch.data?.[0]?.result as `0x${string}` | undefined;
   const resolverBond = (configBatch.data?.[1]?.result as bigint | undefined) ?? 0n;
   const reviewPeriodSec = Number(configBatch.data?.[2]?.result ?? 259200n); // 3 days fallback
+  const configError = configBatch.isError;
 
   const market = data as Market | undefined;
   const isTrustedResolverRead = useReadContract({
@@ -163,6 +164,11 @@ export default function MarketDetailPage() {
     return (
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="glass-card h-48 animate-pulse" />
+        {configError && (
+          <div className="mt-4 rounded-xl px-4 py-3 text-xs" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
+            Failed to load some contract config. RPC may be down.
+          </div>
+        )}
       </div>
     );
   }

@@ -74,6 +74,12 @@ contract PredictionMarket is ReentrancyGuard {
     /// @notice Maximum allowed resolver bond. Prevents owner from setting absurdly high bond.
     uint256 public constant MAX_RESOLVER_BOND = 100_000_000; // 100 USDC (6 decimals)
 
+    /// @notice Maximum allowed market duration (365 days). Prevents immortal markets.
+    uint256 public constant MAX_DURATION = 365 days;
+
+    /// @notice Minimum bet amount (1 USDC = 1e6). Prevents dust bets and pool manipulation.
+    uint256 public constant MIN_BET = 1_000_000;
+
     /// @notice Fixed fee (in betting token units) charged when creating a market. Sent to feeRecipient.
     ///         Set to 5 USDC (5 * 10^6) assuming 6-decimal token. Immutable.
     uint256 public immutable creationFee;
@@ -178,6 +184,8 @@ contract PredictionMarket is ReentrancyGuard {
     error BetTooLarge();
     error BondTooHigh();
     error ContractPaused();
+    error CloseTimeTooFar();
+    error BetBelowMinimum();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -257,6 +265,7 @@ contract PredictionMarket is ReentrancyGuard {
     ) external whenNotPaused returns (uint256 marketId) {
         if (bytes(question).length == 0 || bytes(question).length > 280) revert EmptyQuestion();
         if (closeTime <= block.timestamp) revert CloseTimeInPast();
+        if (closeTime > block.timestamp + MAX_DURATION) revert CloseTimeTooFar();
         if (resolver == address(0)) revert InvalidResolver();
 
         // Charge creation fee (anti-spam). Requires prior approval.
@@ -289,6 +298,7 @@ contract PredictionMarket is ReentrancyGuard {
 
     function bet(uint256 marketId, bool yes, uint256 amount) external nonReentrant whenNotPaused {
         if (amount == 0) revert ZeroBet();
+        if (amount < MIN_BET) revert BetBelowMinimum();
         if (amount > type(uint128).max) revert BetTooLarge();
         Market storage m = _markets[marketId];
         if (m.outcome != Outcome.Unresolved) revert MarketNotOpen();
