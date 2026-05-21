@@ -190,6 +190,13 @@ export const predictionMarketAbi = [
   },
   {
     type: "function",
+    name: "getUserCreated",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ type: "uint256[]" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "yesBets",
     inputs: [
       { name: "marketId", type: "uint256" },
@@ -330,6 +337,44 @@ export const predictionMarketAbi = [
     type: "event",
     name: "Unpaused",
     inputs: [{ name: "account", type: "address", indexed: false }],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Claimed",
+    inputs: [
+      { name: "marketId", type: "uint256", indexed: true },
+      { name: "user", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Refunded",
+    inputs: [
+      { name: "marketId", type: "uint256", indexed: true },
+      { name: "user", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OwnershipTransferred",
+    inputs: [
+      { name: "previousOwner", type: "address", indexed: true },
+      { name: "newOwner", type: "address", indexed: true },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "TrustedResolverSet",
+    inputs: [
+      { name: "resolver", type: "address", indexed: true },
+      { name: "trusted", type: "bool", indexed: false },
+    ],
     anonymous: false,
   },
 ] as const;
