@@ -6,7 +6,12 @@ import { TOKEN_ADDRESS, TOKEN_SYMBOL, erc20Abi } from "@/lib/contract";
 import { fmtToken, classNames } from "@/lib/utils";
 import { pushToast } from "@/lib/toast";
 
+import { CHAIN_ID } from "@/lib/contract";
+
 export function FaucetButton({ compact = false }: { compact?: boolean }) {
+  // Hide faucet on mainnet — real USDC doesn't have a faucet() function
+  if (CHAIN_ID === 8453) return null;
+
   const { address, isConnected } = useAccount();
 
   const { data: balance, refetch: refetchBalance } = useReadContract({

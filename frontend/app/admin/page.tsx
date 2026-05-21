@@ -204,11 +204,23 @@ export default function AdminPage() {
             <span><strong>Transfer Ownership</strong> — hand over admin role to a new address</span>
           </li>
           <li className="flex items-start gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" className="mt-0.5 flex-shrink-0">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+            <span><strong>Pause / Unpause</strong> — emergency halt new bets and market creation (claims/refunds remain available)</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" className="mt-0.5 flex-shrink-0">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+            <span><strong>Adjust Resolver Bond</strong> — change the bond amount for non-trusted resolvers (max 100 USDC)</span>
+          </li>
+          <li className="flex items-start gap-2">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2.5" strokeLinecap="round" className="mt-0.5 flex-shrink-0">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
-            <span style={{ color: "rgba(248,113,113,0.8)" }}><strong>Cannot</strong> move user funds, change fees, upgrade contract, or pause betting</span>
+            <span style={{ color: "rgba(248,113,113,0.8)" }}><strong>Cannot</strong> move user funds, change fees, or upgrade the contract</span>
           </li>
         </ul>
       </div>
