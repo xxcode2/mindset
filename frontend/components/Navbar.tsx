@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { useAccount, useReadContract } from "wagmi";
 import { ConnectButton } from "./ConnectButton";
 import { FaucetButton } from "./FaucetButton";
+import { CONTRACT_ADDRESS, predictionMarketAbi } from "@/lib/contract";
 import { classNames } from "@/lib/utils";
 
 const NAV = [
@@ -18,6 +20,18 @@ const NAV = [
 export function Navbar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { address } = useAccount();
+
+  // Detect if connected wallet is the contract owner
+  const { data: ownerAddr } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: predictionMarketAbi,
+    functionName: "owner",
+  });
+  const isOwner =
+    !!address &&
+    !!ownerAddr &&
+    (address as string).toLowerCase() === (ownerAddr as string).toLowerCase();
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -70,9 +84,40 @@ export function Navbar() {
                 {n.label}
               </Link>
             ))}
+            {isOwner && (
+              <Link
+                href="/admin"
+                className={classNames(
+                  "nav-link text-sm font-medium tracking-wide",
+                  isActive("/admin") && "active"
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg>
+                  Admin
+                </span>
+              </Link>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
+            {isOwner && (
+              <span
+                className="hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold sm:inline-flex"
+                style={{
+                  background: "rgba(251,191,36,0.12)",
+                  border: "1px solid rgba(251,191,36,0.3)",
+                  color: "#fbbf24",
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+                Owner
+              </span>
+            )}
             <div className="hidden sm:block">
               <FaucetButton />
             </div>
@@ -126,6 +171,23 @@ export function Navbar() {
                   {n.label}
                 </Link>
               ))}
+              {isOwner && (
+                <Link
+                  href="/admin"
+                  onClick={() => setOpen(false)}
+                  className={classNames(
+                    "nav-link rounded-lg px-3 py-2 text-sm font-medium",
+                    isActive("/admin") && "active"
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    </svg>
+                    Admin
+                  </span>
+                </Link>
+              )}
               {/* Faucet prominent on mobile */}
               <div className="mt-3 px-3">
                 <FaucetButton compact />

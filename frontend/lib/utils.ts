@@ -30,13 +30,16 @@ export function fmtToken(amount: bigint, decimals = TOKEN_DECIMALS, withSymbol =
   return `${negative ? "-" : ""}${out}${withSymbol ? ` ${TOKEN_SYMBOL}` : ""}`;
 }
 
-/** Compact form for big numbers in stat cards: 1234567 -> $1.2M */
+/** Compact form for big numbers in stat cards: 1234567 -> $1.2M, -500000 -> -$500 */
 export function fmtCompactUsd(amount: bigint, decimals = TOKEN_DECIMALS): string {
   const n = Number(amount) / 10 ** decimals;
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
-  if (n >= 1) return `$${n.toFixed(0)}`;
-  return `$${n.toFixed(2)}`;
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
+  if (abs >= 1) return `${sign}$${abs.toFixed(0)}`;
+  if (abs === 0) return "$0";
+  return `${sign}$${abs.toFixed(2)}`;
 }
 
 /** Parse a user-entered string into raw token units. Returns 0n on bad input. */
