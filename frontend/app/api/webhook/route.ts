@@ -10,8 +10,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Log for debugging (remove or replace with proper logging in production)
-    console.log("[farcaster-webhook]", JSON.stringify(body, null, 2));
+    // Webhook event received — extend cases below to handle.
 
     const event = body?.event;
 
