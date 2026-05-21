@@ -42,7 +42,8 @@ export async function POST(req: NextRequest) {
       const signature =
         req.headers.get("x-farcaster-signature") ??
         req.headers.get("x-signature") ??
-        req.headers.get("x-hub-signature-256")?.replace("sha256=", "");
+        req.headers.get("x-hub-signature-256")?.replace("sha256=", "") ??
+        null;
 
       if (!verifySignature(rawBody, signature, webhookSecret)) {
         console.warn("[farcaster-webhook] invalid signature — rejecting");
