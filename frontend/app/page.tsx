@@ -50,7 +50,7 @@ const HOW_IT_WORKS = [
 ];
 
 export default function Home() {
-  const { markets, isLoading } = useAllMarkets();
+  const { markets, isLoading } = useAllMarkets(100);
 
   // Aggregate live stats from on-chain data.
   const totalVolume = markets.reduce((acc, { market }) => acc + market.yesPool + market.noPool, 0n);

@@ -28,7 +28,7 @@ export function useAllMarkets(limit?: number) {
       : Array.from({ length: fetchCount }, (_, i) => BigInt(total - 1 - i));
 
   const batch = useReadContracts({
-    allowFailure: false,
+    allowFailure: true,
     contracts: ids.map((id) => ({
       address: CONTRACT_ADDRESS as `0x${string}`,
       abi: predictionMarketAbi,
@@ -38,12 +38,22 @@ export function useAllMarkets(limit?: number) {
     query: { enabled: fetchCount > 0 },
   });
 
-  const markets = (batch.data as Market[] | undefined) ?? [];
+  const markets = batch.data
+    ? batch.data
+        .map((r, i) => ({
+          id: ids[i],
+          market: (r as { status: string; result?: Market }).status === "success"
+            ? ((r as { result: Market }).result)
+            : undefined,
+        }))
+        .filter((entry): entry is { id: bigint; market: Market } => entry.market !== undefined)
+    : [];
   return {
     ids,
     total,
-    markets: markets.map((m, i) => ({ id: ids[i], market: m })),
+    markets,
     isLoading: loadingCount || batch.isLoading,
+    isError: batch.isError,
     refetch: batch.refetch,
   };
 }

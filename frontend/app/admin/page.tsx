@@ -47,6 +47,9 @@ export default function AdminPage() {
   const isOwner =
     !!address && !!ownerAddr && address.toLowerCase() === ownerAddr.toLowerCase();
 
+  const configLoading = configBatch.isLoading;
+  const configError = configBatch.isError;
+
   // Transfer ownership form
   const [newOwner, setNewOwner] = useState("");
   const transferTx = useWriteContract();
@@ -105,6 +108,29 @@ export default function AdminPage() {
     );
   }
 
+  if (configLoading) {
+    return (
+      <section className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 lg:px-8">
+        <div className="glass-card h-48 animate-pulse" />
+      </section>
+    );
+  }
+
+  if (configError) {
+    return (
+      <section className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 lg:px-8">
+        <div className="glass-card p-12">
+          <h2 className="mb-3 text-2xl font-bold" style={{ color: "#f87171" }}>
+            Failed to load contract config
+          </h2>
+          <p className="text-sm" style={{ color: "rgba(148,163,184,0.6)" }}>
+            Check your RPC connection and try again.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
   if (!isOwner) {
     return (
       <section className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 lg:px-8">
@@ -123,12 +149,6 @@ export default function AdminPage() {
           </h2>
           <p className="mb-2 text-sm" style={{ color: "rgba(148,163,184,0.6)" }}>
             This page is only accessible to the contract owner.
-          </p>
-          <p className="text-xs font-mono" style={{ color: "rgba(148,163,184,0.4)" }}>
-            Owner: {fmtAddr(ownerAddr, 8, 6)}
-          </p>
-          <p className="mt-1 text-xs font-mono" style={{ color: "rgba(148,163,184,0.4)" }}>
-            Your wallet: {fmtAddr(address, 8, 6)}
           </p>
         </div>
       </section>

@@ -20,7 +20,7 @@ type LeaderEntry = {
  * we show market creators and aggregate market-level stats as a proxy.
  */
 export default function LeaderboardPage() {
-  const { markets, isLoading } = useAllMarkets();
+  const { markets, isLoading } = useAllMarkets(200);
 
   // Aggregate stats by market creator (the only address we can reliably extract without indexer)
   const leaderboard = useMemo(() => {
