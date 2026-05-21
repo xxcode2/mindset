@@ -5,7 +5,7 @@
 Non-custodial parimutuel YES/NO prediction markets on **Base**. Take a side in any market with USDC. When the market resolves, winners split the entire pool — losing stakes top up the prize. The smart contract is the only custodian; there is no admin and no upgrade path.
 
 ```
-contracts/   Solidity (Hardhat) — PredictionMarket.sol + ChainlinkPriceResolver.sol + MockUSDC.sol  · 18 tests passing
+contracts/   Solidity (Hardhat) — PredictionMarket.sol + ChainlinkPriceResolver.sol + MockUSDC.sol  · 37+ tests passing
 frontend/    Next.js 14 + wagmi v2 + Farcaster Mini App SDK + Tailwind
 ```
 
@@ -59,11 +59,32 @@ Everyone on the winning side gets back their stake plus a slice of the losers' s
 This is a **non-custodial** application. The dev (you) does **not** hold user funds.
 
 - All bets and payouts pass through the `PredictionMarket` smart contract.
-- The contract has **no owner, no admin, no upgrade path, no emergency withdraw**.
+- The contract has a single **owner** role with narrow, bounded powers (see below). It has **no upgrade path** and **no emergency withdraw** that can steal user funds.
 - `bettingToken`, `feeRecipient`, and `creationFee` are set in the constructor and **immutable** forever.
-- The 5% protocol fee is taken only from the **losing pool**, so winners always receive their full stake back plus a proportional share of the losers' stakes.
+- The **5% protocol fee** (`FEE_BPS = 500`) is taken only from the **losing pool**, so winners always receive their full stake back plus a proportional share of the losers' stakes.
 - A small **5 USDC creation fee** (anti-spam) is charged when calling `createMarket` and forwarded to `feeRecipient`.
 - **Safety net**: if a market's resolver fails to settle within **7 days** of close, anyone can call `markInvalid()` — bettors then call `refund()` to recover their stake. Funds cannot get stuck.
+
+### Owner powers (limited)
+
+The `owner` address can:
+1. **Approve / reject** pending outcome proposals from non-trusted resolvers (two-phase resolution).
+2. **Manage the trusted resolver whitelist** (`setTrustedResolver`).
+3. **Adjust `resolverBond`** up to a hard cap of 100 USDC (`setResolverBond`).
+4. **Pause / unpause** `createMarket()` and `bet()` only — for emergency stops. `claim()`, `refund()`, `resolve()`, `finalizeIfTimeout()` remain available even when paused.
+5. **Transfer ownership** (`transferOwnership`).
+
+The owner **cannot**: move user funds, change fees, change the betting token, upgrade the contract, or block claims/refunds.
+
+> **Recommendation**: use a **Safe multisig** (2-of-3) as owner for production deployments.
+
+### Two-phase resolution (anti-cheat)
+
+For human resolvers (Sports, Politics, Social, etc.):
+1. Resolver proposes an outcome and locks a bond.
+2. Owner has 3 days to approve (finalize + refund bond) or reject (invalidate + slash bond).
+3. If owner is silent for 3 days → anyone can call `finalizeIfTimeout()` (default-trust).
+4. Automated oracle resolvers (Chainlink) are whitelisted as **trusted** and bypass the review window entirely.
 
 The remaining risk is the usual smart-contract risk. Start on **Base Sepolia testnet** to learn safely before going to mainnet.
 
@@ -87,7 +108,7 @@ Built-in feed catalog (Base mainnet & Sepolia): BTC/USD, ETH/USD, SOL/USD, LINK/
 # 1. Contracts
 cd contracts
 npm install
-npm test            # expect 18 passing
+npm test            # expect 37+ passing
 
 # 2. Frontend
 cd ../frontend
@@ -122,7 +143,10 @@ Edit `.env`:
 
 ```
 PRIVATE_KEY=0x<exported private key from your fresh test wallet>
-FEE_RECIPIENT=0x<your wallet address — receives the 5% protocol fee + creation fees>
+FEE_RECIPIENT=0x<your treasury address — receives 5% fee + creation fees + slashed bonds>
+OWNER_ADDRESS=                # leave empty to default to deployer; use a Safe multisig for mainnet
+RESOLVER_BOND=10000000        # 10 USDC (adjustable post-deploy by owner, max 100 USDC)
+CREATION_FEE=5000000          # 5 USDC
 BETTING_TOKEN=                # leave empty on testnet — script auto-deploys MockUSDC
 BASESCAN_API_KEY=             # optional, for verification
 ```
@@ -148,7 +172,7 @@ It also writes `contracts/deployments.json` for reference.
 ### 4. (Optional) Verify on BaseScan
 
 ```bash
-npx hardhat verify --network baseSepolia 0xCONTRACT... 0xTOKEN... 0xFEE_RECIPIENT 5000000
+npx hardhat verify --network baseSepolia 0xCONTRACT... 0xTOKEN... 0xFEE_RECIPIENT 5000000 0xOWNER 10000000
 npx hardhat verify --network baseSepolia 0xRESOLVER... 0xCONTRACT...
 ```
 
@@ -223,14 +247,25 @@ The app includes `base:app_id` meta tag for Base platform verification:
 
 | Function | Who | Effect |
 | --- | --- | --- |
-| `createMarket(question, description, closeTime, resolver, category)` | anyone | Register a new YES/NO market. Charges `creationFee` (5 USDC) — requires prior `approve()` |
-| `bet(marketId, yes, amount)` | anyone | Take a side. Requires prior `approve()` on the betting token |
-| `resolve(marketId, yesWon)` | resolver | After close time, set the outcome; 5% fee from losing pool goes to feeRecipient |
+| `createMarket(question, description, closeTime, resolver, category)` | anyone (whenNotPaused) | Register a new YES/NO market. Charges `creationFee` (5 USDC) — requires prior `approve()` |
+| `bet(marketId, yes, amount)` | anyone (whenNotPaused) | Take a side. Requires prior `approve()` on the betting token |
+| `resolve(marketId, yesWon)` | resolver | After close time, propose or finalize outcome. Non-trusted resolvers lock a bond |
+| `approveOutcome(marketId)` | owner | Finalize a pending proposal and refund the resolver's bond |
+| `rejectOutcome(marketId)` | owner (within 3 days) | Invalidate market and slash the resolver's bond |
+| `finalizeIfTimeout(marketId)` | anyone (after 3 days) | Auto-approve pending proposal if owner was silent |
 | `claim(marketId)` | winner | Receive proportional payout from the pool |
+| `claimBatch(marketIds[])` | winner | Claim multiple markets in one tx (skips non-claimable) |
 | `markInvalid(marketId)` | anyone | After close + 7 days unresolved, mark for refunds |
 | `refund(marketId)` | bettor | Get original stake back from an invalidated market |
+| `refundBatch(marketIds[])` | bettor | Refund multiple invalid markets in one tx |
+| `setResolverBond(newBond)` | owner | Adjust resolver bond (max 100 USDC) |
+| `setTrustedResolver(resolver, trusted)` | owner | Add/remove oracle from trusted whitelist |
+| `pause() / unpause()` | owner | Emergency stop for bet + createMarket only |
+| `transferOwnership(newOwner)` | owner | Transfer admin role |
 | `previewPayout(marketId, user, yesOutcome) view` | anyone | Preview payout for a hypothetical outcome |
 | `impliedYesBps(marketId) view` | anyone | Implied probability of YES (0–10000 bps) |
+
+Constructor params (5): `bettingToken`, `feeRecipient`, `creationFee`, `owner`, `resolverBond`.
 
 `Category` enum: `Custom (0)`, `Price (1)`, `Sports (2)`, `Politics (3)`, `Social (4)`, `Crypto (5)`. Stored as a UI hint.
 
@@ -256,7 +291,7 @@ mindset/
 │   │   ├── MockUSDC.sol                 # testnet faucet token (6 decimals)
 │   │   └── MockAggregator.sol           # test-only Chainlink feed mock
 │   ├── scripts/deploy.ts
-│   ├── test/PredictionMarket.test.ts    # 18 tests (market + Chainlink resolver)
+│   ├── test/PredictionMarket.test.ts    # 37+ tests (market + Chainlink resolver + hardening)
 │   └── hardhat.config.ts
 └── frontend/
     ├── app/
