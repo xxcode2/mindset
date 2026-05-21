@@ -119,10 +119,13 @@ export default function DashboardPage() {
   }, [batch.data, ids]);
 
   const stats = useMemo(() => {
+    const FEE_BPS = 500n;
+    const BPS_DENOM = 10000n;
+
     let active = 0;
     let claimable = 0;
     let totalStaked = 0n;
-    let totalSettled = 0n; // simple "potential" sum: claimed wins (counted as their bet) - claimed losses
+    let totalSettled = 0n;
     for (const p of positions) {
       if (!p.market) continue;
       const stake = p.yesBet + p.noBet;
@@ -137,7 +140,27 @@ export default function DashboardPage() {
         (p.market.outcome === 2 && p.yesBet > 0n);
       if (isWinner && !p.claimed) claimable++;
       if (p.market.outcome === 3 && stake > 0n && !p.claimed) claimable++;
-      if (isLoser) totalSettled -= stake; // realized loss
+
+      // Realized loss: only the losing-side stake is gone
+      if (isLoser) {
+        const loserStake = p.market.outcome === 1 ? p.noBet : p.yesBet;
+        totalSettled -= loserStake;
+      }
+
+      // Realized profit: for claimed winning positions, compute payout using
+      // the same formula as the contract and derive profit = payout - winnerStake
+      if (isWinner && p.claimed) {
+        const yesWon = p.market.outcome === 1;
+        const winnerStake = yesWon ? p.yesBet : p.noBet;
+        const winningPool = BigInt(yesWon ? p.market.yesPool : p.market.noPool);
+        const losingPool = BigInt(yesWon ? p.market.noPool : p.market.yesPool);
+        if (winningPool > 0n) {
+          const fee = (losingPool * FEE_BPS) / BPS_DENOM;
+          const distributable = winningPool + losingPool - fee;
+          const payout = (winnerStake * distributable) / winningPool;
+          totalSettled += payout - winnerStake; // net profit
+        }
+      }
     }
     return { active, claimable, totalStaked, totalSettled };
   }, [positions]);
