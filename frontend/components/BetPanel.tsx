@@ -82,7 +82,7 @@ export function BetPanel({
         address: TOKEN_ADDRESS,
         abi: erc20Abi,
         functionName: "approve",
-        args: [CONTRACT_ADDRESS, 2n ** 256n - 1n],
+        args: [CONTRACT_ADDRESS, amount],
       });
       return;
     }
