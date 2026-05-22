@@ -51,9 +51,7 @@ export function Footer() {
           <FooterCol
             title="COMMUNITY"
             links={[
-              { label: "Farcaster", href: "https://farcaster.xyz" },
-              { label: "GitHub", href: "https://github.com/xxcode2/mindset" },
-              { label: "X / Twitter", href: "#" },
+              { label: "X", href: "https://x.com/Mindsetfdn" },
             ]}
           />
         </div>
