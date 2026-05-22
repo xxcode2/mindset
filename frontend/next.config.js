@@ -16,7 +16,8 @@ const nextConfig = {
         source: "/(.*)",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "DENY" },
+          // X-Frame-Options removed — CSP frame-ancestors handles framing restriction.
+          // "DENY" was blocking Farcaster/Warpcast iframe embeds (mini app stuck on loading).
           { key: "X-XSS-Protection", value: "1; mode=block" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
